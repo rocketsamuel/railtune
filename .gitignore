@@ -1,0 +1,55 @@
+# Built application files
+*.apk
+*.aar
+*.ap_
+*.aab
+
+# Files for ART/DALVIK
+*.dex
+
+# Java class files
+*.class
+
+# Generated build files & caches
+/build/
+/*/build/
+.gradle/
+.kotlin/
+
+# Heap dumps and performance captures
+*.capt
+*.hprof
+java_pid*.hprof
+
+# Android Studio / IntelliJ IDEA
+.idea/workspace.xml
+.idea/tasks.xml
+.idea/gradle.xml
+.idea/assetWizardSettings.xml
+.idea/dictionaries
+.idea/libraries
+.idea/caches
+.idea/shelf/
+*.iws
+*.iml
+*.ipr
+/out/
+
+# Navigation editor temp files
+.navigation/
+
+# Keystore files
+*.jks
+*.keystore
+
+# Local configuration & environment
+local.properties
+
+# External native build folders / NDK
+.externalNativeBuild/
+.cxx/
+obj/
+
+# OS generated files
+.DS_Store
+Thumbs.db
