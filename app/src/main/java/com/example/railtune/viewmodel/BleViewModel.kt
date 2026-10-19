@@ -71,10 +71,6 @@ class BleViewModel(application: Application) : AndroidViewModel(application) {
         bleManager.selectCharacteristic(serviceUuid, charUuid)
     }
 
-    fun readCurrentData() {
-        bleManager.readCharacteristic()
-    }
-
     fun clearDataHistory() {
         bleManager.clearHistory()
     }

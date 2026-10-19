@@ -8,6 +8,7 @@ import android.bluetooth.le.ScanResult
 import android.bluetooth.le.ScanSettings
 import android.content.Context
 import android.os.Build
+import android.os.SystemClock
 import android.util.Log
 import com.example.railtune.model.BleDevice
 import com.example.railtune.model.ConnectionState
@@ -28,6 +29,7 @@ class BleManager(private val context: Context) {
         private const val KEY_LAST_ADDRESS = "last_connected_address"
         private const val KEY_LAST_NAME = "last_connected_name"
         private const val KEY_AUTO_CONNECT = "auto_connect_enabled"
+        private const val DEVICE_SORT_INTERVAL_MS = 10_000L
 
         val CCCD_UUID: UUID = UUID.fromString("00002902-0000-1000-8000-00805f9b34fb")
         val DEFAULT_SERVICE_UUID: UUID = UUID.fromString("4fa1c001-0401-4051-b02c-35804611243c")
@@ -41,6 +43,8 @@ class BleManager(private val context: Context) {
     private val bluetoothAdapter: BluetoothAdapter? = bluetoothManager?.adapter
 
     private var activeGatt: BluetoothGatt? = null
+    private var activeDeviceName: String? = null
+    private var lastDeviceSortAtMs = 0L
     private var isManualDisconnect = false
 
     private val _discoveredDevices = MutableStateFlow<List<BleDevice>>(emptyList())
@@ -83,9 +87,16 @@ class BleManager(private val context: Context) {
         override fun onScanResult(callbackType: Int, result: ScanResult?) {
             result?.let { scanResult ->
                 val device = scanResult.device
-                val name = device.name ?: scanResult.scanRecord?.deviceName ?: "Unbekanntes ESP32/BLE Gerät"
+                // ScanRecord enthält den aktuellen Werbenamen; BluetoothDevice.name kann im Android-Cache hängen.
+                val name = scanResult.scanRecord?.deviceName ?: device.name ?: "Unbekanntes ESP32/BLE Gerät"
                 val address = device.address
                 val rssi = scanResult.rssi
+
+                if (address.equals(_lastConnectedAddress.value, ignoreCase = true) &&
+                    _lastConnectedName.value != name
+                ) {
+                    saveLastConnectedDevice(address, name)
+                }
 
                 val newBleDevice = BleDevice(name = name, address = address, rssi = rssi, device = device)
 
@@ -96,12 +107,19 @@ class BleManager(private val context: Context) {
                 } else {
                     currentList.add(newBleDevice)
                 }
-                _discoveredDevices.value = currentList.sortedByDescending { it.rssi }
+                val now = SystemClock.elapsedRealtime()
+                if (lastDeviceSortAtMs == 0L || now - lastDeviceSortAtMs >= DEVICE_SORT_INTERVAL_MS) {
+                    _discoveredDevices.value = currentList.sortedByDescending { it.rssi }
+                    lastDeviceSortAtMs = now
+                } else {
+                    // RSSI-Werte aktualisieren, die sichtbare Reihenfolge bis zur nächsten Sortierung stabil halten.
+                    _discoveredDevices.value = currentList
+                }
 
                 // Auto-Connect check
                 val targetAddress = _lastConnectedAddress.value
                 val autoConnect = _isAutoConnectEnabled.value
-                if (autoConnect && !targetAddress.isNullOrEmpty() && address.equals(targetAddress, ignoreCase = true)) {
+                if (autoConnect && !isManualDisconnect && !targetAddress.isNullOrEmpty() && address.equals(targetAddress, ignoreCase = true)) {
                     if (_connectionState.value is ConnectionState.Scanning || _connectionState.value is ConnectionState.Disconnected) {
                         Log.i(TAG, "Auto-Connect: Gespeichertes Gerät $name ($address) entdeckt! Verbinde automatisch...")
                         connect(newBleDevice)
@@ -132,6 +150,7 @@ class BleManager(private val context: Context) {
         }
 
         _discoveredDevices.value = emptyList()
+        lastDeviceSortAtMs = 0L
         _isScanning.value = true
         _connectionState.value = ConnectionState.Scanning
 
@@ -170,6 +189,7 @@ class BleManager(private val context: Context) {
         isManualDisconnect = false
         stopScan()
         disconnectInternal()
+        activeDeviceName = bleDevice.name
         _connectionState.value = ConnectionState.Connecting(bleDevice.name)
 
         try {
@@ -201,10 +221,15 @@ class BleManager(private val context: Context) {
                 try { gatt.close() } catch (_: Exception) {}
             }
         }
+        activeDeviceName = null
         _discoveredGattServices.value = emptyList()
         _activeCharacteristic.value = null
         _connectionState.value = ConnectionState.Disconnected
     }
+
+    private fun deviceNameFor(gatt: BluetoothGatt): String =
+        if (gatt === activeGatt) activeDeviceName ?: gatt.device.name ?: "ESP32"
+        else gatt.device.name ?: "ESP32"
 
     private fun saveLastConnectedDevice(address: String, name: String) {
         prefs.edit()
@@ -235,7 +260,17 @@ class BleManager(private val context: Context) {
     private val gattCallback = object : BluetoothGattCallback() {
         override fun onConnectionStateChange(gatt: BluetoothGatt?, status: Int, newState: Int) {
             if (gatt == null) return
-            val deviceName = gatt.device.name ?: "ESP32"
+            val deviceName = deviceNameFor(gatt)
+            if (gatt !== activeGatt) {
+                Log.d(TAG, "Verspäteter GATT-Callback für alte Verbindung $deviceName wird ignoriert")
+                try {
+                    gatt.disconnect()
+                } catch (_: Exception) {}
+                try {
+                    gatt.close()
+                } catch (_: Exception) {}
+                return
+            }
 
             if (newState == BluetoothProfile.STATE_CONNECTED && status == BluetoothGatt.GATT_SUCCESS) {
                 if (gatt === activeGatt) {
@@ -288,7 +323,7 @@ class BleManager(private val context: Context) {
         override fun onServicesDiscovered(gatt: BluetoothGatt?, status: Int) {
             if (gatt == null || gatt !== activeGatt) return
             if (status == BluetoothGatt.GATT_SUCCESS) {
-                val deviceName = gatt.device.name ?: "ESP32"
+                val deviceName = deviceNameFor(gatt)
                 Log.d(TAG, "GATT Dienste entdeckt für $deviceName")
 
                 val servicesList = gatt.services.map { service ->
@@ -324,7 +359,7 @@ class BleManager(private val context: Context) {
             if (gatt !== activeGatt || descriptor.uuid != CCCD_UUID) return
             Log.i(TAG, "CCCD callback: device=${gatt.device.address}, descriptor=${descriptor.uuid}, status=$status")
 
-            val deviceName = gatt.device.name ?: "ESP32"
+            val deviceName = deviceNameFor(gatt)
             _connectionState.value = ConnectionState.Connected(deviceName, gatt.device.address)
 
             if (status != BluetoothGatt.GATT_SUCCESS) {
@@ -466,7 +501,7 @@ class BleManager(private val context: Context) {
             isWritable = (charToSubscribe.properties and (BluetoothGattCharacteristic.PROPERTY_WRITE or BluetoothGattCharacteristic.PROPERTY_WRITE_NO_RESPONSE)) != 0
         )
 
-        val deviceName = targetGatt.device.name ?: "ESP32"
+        val deviceName = deviceNameFor(targetGatt)
         _connectionState.value = ConnectionState.Connected(deviceName, targetGatt.device.address)
 
         val supportsNotify = (charToSubscribe.properties and BluetoothGattCharacteristic.PROPERTY_NOTIFY) != 0

@@ -98,18 +98,10 @@ fun MainScreen(viewModel: BleViewModel) {
         topBar = {
             TopAppBar(
                 title = {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Icon(
-                            imageVector = Icons.Default.Bluetooth,
-                            contentDescription = "Bluetooth Logo",
-                            tint = MaterialTheme.colorScheme.primary,
-                            modifier = Modifier.padding(end = 8.dp)
-                        )
-                        Text(
-                            text = "ESP32 BLE Live Telemetrie",
-                            style = MaterialTheme.typography.titleLarge
-                        )
-                    }
+                    Text(
+                        text = "Railtune",
+                        style = MaterialTheme.typography.titleLarge
+                    )
                 },
                 actions = {
                     IconButton(onClick = { showEsp32CodeDialog = true }) {
@@ -196,7 +188,6 @@ fun MainScreen(viewModel: BleViewModel) {
                         history = dataHistory,
                         activeCharacteristic = activeCharacteristic,
                         discoveredGattServices = discoveredGattServices,
-                        onManualRead = { viewModel.readCurrentData() },
                         onSelectCharacteristic = { serviceUuid, charUuid ->
                             viewModel.selectCharacteristic(serviceUuid, charUuid)
                         },
@@ -302,7 +293,7 @@ fun ConnectionStatusCard(
                     Button(onClick = onStartScan) {
                         Icon(Icons.Default.Search, contentDescription = null)
                         Spacer(modifier = Modifier.width(4.dp))
-                        Text("ESP32 Suchen")
+                        Text("Messwagen suchen")
                     }
                 }
             }
@@ -500,7 +491,6 @@ fun LiveDashboardView(
     history: List<LiveDataPacket>,
     activeCharacteristic: DiscoveredGattCharacteristic?,
     discoveredGattServices: List<DiscoveredGattService>,
-    onManualRead: () -> Unit,
     onSelectCharacteristic: (UUID, UUID) -> Unit,
     onSetCustomUuids: (String, String) -> Unit,
     onClearHistory: () -> Unit
@@ -512,79 +502,6 @@ fun LiveDashboardView(
         modifier = Modifier.fillMaxSize(),
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
-        // Active Characteristic info card
-        Card(
-            modifier = Modifier.fillMaxWidth(),
-            colors = CardDefaults.cardColors(
-                containerColor = MaterialTheme.colorScheme.surfaceVariant
-            )
-        ) {
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(12.dp),
-                verticalArrangement = Arrangement.spacedBy(6.dp)
-            ) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text(
-                        text = "AKTIVE CHARAKTERISTIK",
-                        style = MaterialTheme.typography.labelSmall,
-                        fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.primary
-                    )
-                    OutlinedButton(
-                        onClick = { showGattDialog = true },
-                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp)
-                    ) {
-                        Icon(Icons.Default.Settings, contentDescription = null, modifier = Modifier.size(16.dp))
-                        Spacer(modifier = Modifier.width(4.dp))
-                        Text("Dienste / UUIDs (${discoveredGattServices.size})", fontSize = 12.sp)
-                    }
-                }
-
-                if (activeCharacteristic != null) {
-                    Text(
-                        text = "Char: ${activeCharacteristic.uuid}",
-                        style = MaterialTheme.typography.bodySmall,
-                        fontFamily = FontFamily.Monospace,
-                        fontWeight = FontWeight.SemiBold
-                    )
-                    Text(
-                        text = "Service: ${activeCharacteristic.serviceUuid}",
-                        style = MaterialTheme.typography.labelSmall,
-                        fontFamily = FontFamily.Monospace,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                } else {
-                    Text(
-                        text = "Keine passende Charakteristik gewählt",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.error
-                    )
-                }
-
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.End
-                ) {
-                    if (activeCharacteristic?.isReadable == true) {
-                        ElevatedButton(
-                            onClick = onManualRead,
-                            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp)
-                        ) {
-                            Icon(Icons.Default.Refresh, contentDescription = null, modifier = Modifier.size(16.dp))
-                            Spacer(modifier = Modifier.width(4.dp))
-                            Text("Manuell Abfragen")
-                        }
-                    }
-                }
-            }
-        }
-
         // Live Data Display
         Card(
             modifier = Modifier.fillMaxWidth(),
@@ -605,22 +522,33 @@ fun LiveDashboardView(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text(
-                        text = "LIVEDATEN ($deviceName)",
+                        text = "LIVEDATEN ($deviceName / $deviceAddress)",
                         style = MaterialTheme.typography.labelMedium,
                         color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.7f),
                         letterSpacing = 1.5.sp
                     )
-                    FilterChip(
-                        selected = showHexView,
-                        onClick = { showHexView = !showHexView },
-                        label = { Text(if (showHexView) "HEX" else "Text") }
-                    )
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        IconButton(onClick = { showGattDialog = true }) {
+                            Icon(
+                                imageVector = Icons.Default.Settings,
+                                contentDescription = "Dienste / UUIDs",
+                                tint = MaterialTheme.colorScheme.onPrimaryContainer
+                            )
+                        }
+                        FilterChip(
+                            selected = showHexView,
+                            onClick = { showHexView = !showHexView },
+                            label = { Text(if (showHexView) "HEX" else "Text") }
+                        )
+                    }
                 }
 
                 val displayText = if (latestPacket == null) {
                     "--"
                 } else if (showHexView) {
                     latestPacket.hexValue
+                } else if (latestPacket.textValue.toFloatOrNull() != null) {
+                    "${latestPacket.textValue} km/h"
                 } else {
                     latestPacket.textValue
                 }
@@ -633,14 +561,21 @@ fun LiveDashboardView(
                     fontFamily = FontFamily.Monospace
                 )
 
-                latestPacket?.let {
-                    val sdf = remember { SimpleDateFormat("HH:mm:ss.SSS", Locale.getDefault()) }
-                    val formattedTime = sdf.format(Date(it.timestampMs))
-                    Text(
-                        text = "Letztes Paket: $formattedTime (${it.rawBytes.size} Bytes)",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.8f)
-                    )
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    latestPacket?.let {
+                        val sdf = remember { SimpleDateFormat("HH:mm:ss.SSS", Locale.getDefault()) }
+                        val formattedTime = sdf.format(Date(it.timestampMs))
+                        Text(
+                            text = "Letztes Paket: $formattedTime (${it.rawBytes.size} Bytes)",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.8f)
+                        )
+                    } ?: Spacer(modifier = Modifier.width(1.dp))
+
                 }
             }
         }
@@ -673,12 +608,6 @@ fun LiveDashboardView(
                         text = "Warte auf Livedaten vom ESP32...",
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
-                    Spacer(modifier = Modifier.height(8.dp))
-                    Text(
-                        text = "Falls keine Daten automatisch kommen, klicke oben auf 'Manuell Abfragen' oder wähle unter 'Dienste / UUIDs' die richtige Charakteristik aus.",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
-                    )
                 }
             }
         } else {
@@ -701,22 +630,20 @@ fun LiveDashboardView(
                             horizontalArrangement = Arrangement.SpaceBetween,
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Column(modifier = Modifier.weight(1f)) {
-                                Text(
-                                    text = if (showHexView) packet.hexValue else packet.textValue,
-                                    style = MaterialTheme.typography.bodyLarge,
-                                    fontWeight = FontWeight.SemiBold,
-                                    fontFamily = FontFamily.Monospace
-                                )
-                                if (packet.characteristicUuid.isNotEmpty()) {
-                                    Text(
-                                        text = "Char: ${packet.characteristicUuid}",
-                                        style = MaterialTheme.typography.labelSmall,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
-                                        fontFamily = FontFamily.Monospace
-                                    )
-                                }
+                            val packetDisplayText = if (showHexView) {
+                                packet.hexValue
+                            } else if (packet.textValue.toFloatOrNull() != null) {
+                                "${packet.textValue} km/h"
+                            } else {
+                                packet.textValue
                             }
+                            Text(
+                                text = packetDisplayText,
+                                style = MaterialTheme.typography.bodyLarge,
+                                fontWeight = FontWeight.SemiBold,
+                                fontFamily = FontFamily.Monospace,
+                                modifier = Modifier.weight(1f)
+                            )
                             Text(
                                 text = sdf.format(Date(packet.timestampMs)),
                                 style = MaterialTheme.typography.bodySmall,
