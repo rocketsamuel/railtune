@@ -8,7 +8,8 @@ data class Loco(
     val address: Int, // DCC Adresse (1 .. 9999)
     val maxSpeedKmH: Int = 160,
     val category: String = "Elektro", // Elektro, Diesel, Dampf, Triebwagen
-    val decoderManufacturer: String = ""
+    val decoderManufacturer: String = "",
+    val illustrationId: String = ""
 )
 
 data class CvResult(

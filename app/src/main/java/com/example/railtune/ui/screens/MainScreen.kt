@@ -9,6 +9,7 @@ import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
@@ -31,12 +32,15 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.res.painterResource
 import androidx.core.content.ContextCompat
+import com.example.railtune.R
 import com.example.railtune.model.BleDevice
 import com.example.railtune.model.ConnectionState
 import com.example.railtune.model.CvResult
@@ -225,8 +229,8 @@ fun MainScreen(viewModel: BleViewModel) {
                         DrivingScreen(
                             savedLocos = savedLocos,
                             railComReadings = railComReadings,
-                            onAddLoco = { name, addr, maxSpd, manufacturer ->
-                                viewModel.addLoco(name, addr, maxSpd, manufacturer)
+                            onAddLoco = { name, addr, maxSpd, manufacturer, illustrationId ->
+                                viewModel.addLoco(name, addr, maxSpd, manufacturer, illustrationId)
                             },
                             onUpdateLoco = { viewModel.updateLoco(it) },
                             onRemoveLoco = { viewModel.removeLoco(it) },
@@ -724,7 +728,7 @@ private fun DecoderManufacturerDropdown(
     onManufacturerSelected: (String) -> Unit
 ) {
     var expanded by remember { mutableStateOf(false) }
-    val manufacturers = listOf("Zimo", "Doehler & Haass")
+    val manufacturers = listOf("Zimo", "Doehler & Haass", "Minitrix")
 
     Box(modifier = Modifier.fillMaxWidth()) {
         OutlinedButton(
@@ -759,10 +763,137 @@ private fun DecoderManufacturerDropdown(
 }
 
 @Composable
+private fun LocoIllustrationDropdown(
+    selectedIllustrationId: String,
+    onIllustrationSelected: (String) -> Unit
+) {
+    var expanded by remember { mutableStateOf(false) }
+    val illustrations = listOf(
+        LocoIllustrationChoice("", "Kein Bild", null),
+        LocoIllustrationChoice("br101", "BR 101", R.drawable.br101),
+        LocoIllustrationChoice("br101_50jahre", "BR 101 – 50 Jahre", R.drawable.br101_50jahre),
+        LocoIllustrationChoice("br103", "BR 103", R.drawable.br103),
+        LocoIllustrationChoice("br110", "BR 110", R.drawable.br110),
+        LocoIllustrationChoice("br111", "BR 111", R.drawable.br111),
+        LocoIllustrationChoice("br111_ob", "BR 111 – o/b", R.drawable.br111_ob),
+        LocoIllustrationChoice("br120", "BR 120", R.drawable.br120),
+        LocoIllustrationChoice("br139", "BR 139", R.drawable.br139),
+        LocoIllustrationChoice("br140", "BR 140", R.drawable.br140),
+        LocoIllustrationChoice("br141", "BR 141", R.drawable.br141),
+        LocoIllustrationChoice("br146", "BR 146", R.drawable.br146),
+        LocoIllustrationChoice("br147", "BR 147", R.drawable.br147),
+        LocoIllustrationChoice("br152", "BR 152", R.drawable.br152),
+        LocoIllustrationChoice("br185", "BR 185", R.drawable.br185),
+        LocoIllustrationChoice("br187", "BR 187", R.drawable.br187),
+        LocoIllustrationChoice("br193_climate", "BR 193 – ClimateHero", R.drawable.br193_climate),
+        LocoIllustrationChoice("br193_backbone", "BR 193 – Backbone", R.drawable.br193_backbone),
+        LocoIllustrationChoice("rh1293", "Rh 1293", R.drawable.rh1293),
+        LocoIllustrationChoice("rh1116", "Rh 1116 – ÖBB", R.drawable.rh1116),
+        LocoIllustrationChoice("rh1116_nj", "Rh 1116 – Nightjet", R.drawable.rh1116_nj),
+        LocoIllustrationChoice("rh1116_rj", "Rh 1116 – Railjet", R.drawable.rh1116_rj),
+        LocoIllustrationChoice("br211", "BR 211", R.drawable.br211),
+        LocoIllustrationChoice("br212", "BR 212 – Orientrot", R.drawable.br212),
+        LocoIllustrationChoice("br212_standard", "BR 212 – Rot", R.drawable.br212_standard),
+        LocoIllustrationChoice("br218_or", "BR 218 – Orientrot", R.drawable.br218_or),
+        LocoIllustrationChoice("br218_tee", "BR 218 – TEE", R.drawable.br218_tee)
+    )
+    val selectedIllustration = illustrations.firstOrNull { it.id == selectedIllustrationId }
+    val selectedName = selectedIllustration?.label ?: "Kein Bild"
+    val selectedImage = selectedIllustration?.imageRes
+
+    Box(modifier = Modifier.fillMaxWidth()) {
+        OutlinedButton(
+            onClick = { expanded = true },
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    if (selectedImage != null) {
+                        Image(
+                            painter = painterResource(selectedImage),
+                            contentDescription = null,
+                            modifier = Modifier.width(48.dp).height(20.dp),
+                            contentScale = ContentScale.Fit
+                        )
+                        Spacer(Modifier.width(8.dp))
+                    }
+                    Text(selectedName)
+                }
+                Icon(Icons.Default.ArrowDropDown, contentDescription = null)
+            }
+        }
+
+        DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+            illustrations.forEach { illustration ->
+                DropdownMenuItem(
+                    text = {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            if (illustration.imageRes != null) {
+                                Image(
+                                    painter = painterResource(illustration.imageRes),
+                                    contentDescription = null,
+                                    modifier = Modifier.width(48.dp).height(20.dp),
+                                    contentScale = ContentScale.Fit
+                                )
+                                Spacer(Modifier.width(8.dp))
+                            }
+                            Text(illustration.label)
+                        }
+                    },
+                    onClick = {
+                        onIllustrationSelected(illustration.id)
+                        expanded = false
+                    }
+                )
+            }
+        }
+    }
+}
+
+private data class LocoIllustrationChoice(
+    val id: String,
+    val label: String,
+    val imageRes: Int?
+)
+
+private fun locoIllustrationResource(id: String): Int? = when (id) {
+    "br101" -> R.drawable.br101
+    "br101_50jahre" -> R.drawable.br101_50jahre
+    "br103" -> R.drawable.br103
+    "br110" -> R.drawable.br110
+    "br111" -> R.drawable.br111
+    "br111_ob" -> R.drawable.br111_ob
+    "br120" -> R.drawable.br120
+    "br139" -> R.drawable.br139
+    "br140" -> R.drawable.br140
+    "br141" -> R.drawable.br141
+    "br146" -> R.drawable.br146
+    "br147" -> R.drawable.br147
+    "br152" -> R.drawable.br152
+    "br185" -> R.drawable.br185
+    "br187" -> R.drawable.br187
+    "br193_climate" -> R.drawable.br193_climate
+    "br193_backbone" -> R.drawable.br193_backbone
+    "rh1293" -> R.drawable.rh1293
+    "rh1116" -> R.drawable.rh1116
+    "rh1116_nj" -> R.drawable.rh1116_nj
+    "rh1116_rj" -> R.drawable.rh1116_rj
+    "br212" -> R.drawable.br212
+    "br212_standard" -> R.drawable.br212_standard
+    "br218_or" -> R.drawable.br218_or
+    "br218_tee" -> R.drawable.br218_tee
+    else -> null
+}
+
+@Composable
 fun DrivingScreen(
     savedLocos: List<Loco>,
     railComReadings: Map<Int, RailComReading>,
-    onAddLoco: (String, Int, Int, String) -> Loco,
+    onAddLoco: (String, Int, Int, String, String) -> Loco,
     onUpdateLoco: (Loco) -> Unit,
     onRemoveLoco: (String) -> Unit,
     onSetLocoSpeed: (Int, Float, Boolean) -> Unit,
@@ -851,13 +982,36 @@ fun DrivingScreen(
                             }
                             savedLocos.sortedBy { it.name.trim().lowercase(Locale.ROOT) }.forEach { loco ->
                                 val isSelected = loco.id == activeLoco?.id
+                                val illustrationRes = locoIllustrationResource(loco.illustrationId)
                                 FilterChip(
                                     selected = isSelected,
                                     onClick = {
                                         selectedLocoId = loco.id
                                         targetSpeedKmH = 0f
                                     },
-                                    label = { Text(text = loco.name, maxLines = 1) },
+                                    label = {
+                                        if (illustrationRes != null) {
+                                            Column(
+                                                modifier = Modifier.padding(vertical = 4.dp),
+                                                horizontalAlignment = Alignment.CenterHorizontally,
+                                                verticalArrangement = Arrangement.spacedBy(2.dp)
+                                            ) {
+                                                Text(text = loco.name, maxLines = 1)
+                                                Image(
+                                                    painter = painterResource(illustrationRes),
+                                                    contentDescription = null,
+                                                    modifier = Modifier.width(64.dp).height(20.dp),
+                                                    contentScale = ContentScale.Fit
+                                                )
+                                            }
+                                        } else {
+                                            Text(
+                                                text = loco.name,
+                                                maxLines = 1,
+                                                modifier = Modifier.padding(vertical = 4.dp)
+                                            )
+                                        }
+                                    },
                                     colors = FilterChipDefaults.filterChipColors(
                                         containerColor = MaterialTheme.colorScheme.surfaceVariant,
                                         labelColor = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -1139,6 +1293,7 @@ fun DrivingScreen(
         var newAddr by remember { mutableStateOf("3") }
         var newMaxSpd by remember { mutableStateOf("160") }
         var newDecoderManufacturer by remember { mutableStateOf("") }
+        var newIllustrationId by remember { mutableStateOf("") }
 
         AlertDialog(
             onDismissRequest = { showAddLocoDialog = false },
@@ -1170,6 +1325,10 @@ fun DrivingScreen(
                         selectedManufacturer = newDecoderManufacturer,
                         onManufacturerSelected = { newDecoderManufacturer = it }
                     )
+                    LocoIllustrationDropdown(
+                        selectedIllustrationId = newIllustrationId,
+                        onIllustrationSelected = { newIllustrationId = it }
+                    )
                 }
             },
             confirmButton = {
@@ -1178,7 +1337,7 @@ fun DrivingScreen(
                     onClick = {
                         val addr = newAddr.toIntOrNull() ?: 3
                         val spd = newMaxSpd.toIntOrNull() ?: 160
-                        onAddLoco(newName, addr, spd, newDecoderManufacturer)
+                        onAddLoco(newName, addr, spd, newDecoderManufacturer, newIllustrationId)
                         showAddLocoDialog = false
                     }
                 ) {
@@ -1198,6 +1357,7 @@ fun DrivingScreen(
         var editAddress by remember(loco.id) { mutableStateOf(loco.address.toString()) }
         var editMaxSpeed by remember(loco.id) { mutableStateOf(loco.maxSpeedKmH.toString()) }
         var editDecoderManufacturer by remember(loco.id) { mutableStateOf(loco.decoderManufacturer) }
+        var editIllustrationId by remember(loco.id) { mutableStateOf(loco.illustrationId) }
 
         AlertDialog(
             onDismissRequest = { editingLoco = null },
@@ -1229,6 +1389,10 @@ fun DrivingScreen(
                         selectedManufacturer = editDecoderManufacturer,
                         onManufacturerSelected = { editDecoderManufacturer = it }
                     )
+                    LocoIllustrationDropdown(
+                        selectedIllustrationId = editIllustrationId,
+                        onIllustrationSelected = { editIllustrationId = it }
+                    )
                     TextButton(
                         onClick = {
                             onRemoveLoco(loco.id)
@@ -1256,7 +1420,8 @@ fun DrivingScreen(
                                 name = editName,
                                 address = editAddress.toInt(),
                                 maxSpeedKmH = editMaxSpeed.toInt(),
-                                decoderManufacturer = editDecoderManufacturer
+                                decoderManufacturer = editDecoderManufacturer,
+                                illustrationId = editIllustrationId
                             )
                         )
                         editingLoco = null

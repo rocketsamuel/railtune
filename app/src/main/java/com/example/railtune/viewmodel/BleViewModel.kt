@@ -111,9 +111,10 @@ class BleViewModel(application: Application) : AndroidViewModel(application) {
         name: String,
         address: Int,
         maxSpeedKmH: Int = 160,
-        decoderManufacturer: String = ""
+        decoderManufacturer: String = "",
+        illustrationId: String = ""
     ): Loco {
-        return z21Manager.addLoco(name, address, maxSpeedKmH, decoderManufacturer)
+        return z21Manager.addLoco(name, address, maxSpeedKmH, decoderManufacturer, illustrationId)
     }
 
     fun removeLoco(locoId: String) {

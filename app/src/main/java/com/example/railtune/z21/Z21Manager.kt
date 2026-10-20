@@ -432,14 +432,16 @@ class Z21Manager(private val context: Context) {
         name: String,
         address: Int,
         maxSpeedKmH: Int = 160,
-        decoderManufacturer: String = ""
+        decoderManufacturer: String = "",
+        illustrationId: String = ""
     ): Loco {
         val newLoco = Loco(
             id = UUID.randomUUID().toString(),
             name = name.ifBlank { "Lok $address" },
             address = address.coerceIn(1, 9999),
             maxSpeedKmH = maxSpeedKmH,
-            decoderManufacturer = decoderManufacturer
+            decoderManufacturer = decoderManufacturer,
+            illustrationId = illustrationId
         )
         val list = _savedLocos.value.toMutableList()
         list.add(0, newLoco)
@@ -470,7 +472,7 @@ class Z21Manager(private val context: Context) {
     private fun saveLocosToPrefs(locos: List<Loco>) {
         _savedLocos.value = locos
         val serialized = locos.joinToString(";") {
-            "${it.id}|${it.name}|${it.address}|${it.maxSpeedKmH}|${it.category}|${it.decoderManufacturer}"
+            "${it.id}|${it.name}|${it.address}|${it.maxSpeedKmH}|${it.category}|${it.decoderManufacturer}|${it.illustrationId}"
         }
         prefs.edit().putString(KEY_LOCO_DATA, serialized).apply()
     }
@@ -495,7 +497,13 @@ class Z21Manager(private val context: Context) {
                             address = parts[2].toIntOrNull() ?: 3,
                             maxSpeedKmH = parts[3].toIntOrNull() ?: 160,
                             category = parts[4],
-                            decoderManufacturer = parts.getOrNull(5).orEmpty()
+                            decoderManufacturer = parts.getOrNull(5).orEmpty(),
+                            illustrationId = parts.getOrNull(6) ?: when {
+                                parts[1].replace(" ", "").contains("BR187", ignoreCase = true) -> "br187"
+                                parts[1].replace(" ", "").contains("BR211", ignoreCase = true) -> "br211"
+                                parts[1].replace(" ", "").contains("BR212", ignoreCase = true) -> "br212"
+                                else -> ""
+                            }
                         )
                     } else null
                 }
