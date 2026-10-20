@@ -87,7 +87,6 @@ class BleManager(private val context: Context) {
         override fun onScanResult(callbackType: Int, result: ScanResult?) {
             result?.let { scanResult ->
                 val device = scanResult.device
-                // ScanRecord enthält den aktuellen Werbenamen; BluetoothDevice.name kann im Android-Cache hängen.
                 val name = scanResult.scanRecord?.deviceName ?: device.name ?: "Unbekanntes ESP32/BLE Gerät"
                 val address = device.address
                 val rssi = scanResult.rssi
@@ -112,7 +111,6 @@ class BleManager(private val context: Context) {
                     _discoveredDevices.value = currentList.sortedByDescending { it.rssi }
                     lastDeviceSortAtMs = now
                 } else {
-                    // RSSI-Werte aktualisieren, die sichtbare Reihenfolge bis zur nächsten Sortierung stabil halten.
                     _discoveredDevices.value = currentList
                 }
 
@@ -121,7 +119,7 @@ class BleManager(private val context: Context) {
                 val autoConnect = _isAutoConnectEnabled.value
                 if (autoConnect && !isManualDisconnect && !targetAddress.isNullOrEmpty() && address.equals(targetAddress, ignoreCase = true)) {
                     if (_connectionState.value is ConnectionState.Scanning || _connectionState.value is ConnectionState.Disconnected) {
-                        Log.i(TAG, "Auto-Connect: Gespeichertes Gerät $name ($address) entdeckt! Verbinde automatisch...")
+                        Log.i(TAG, "Auto-Connect: Gespeichertes Gerät $name entdeckt! Verbinde automatisch...")
                         connect(newBleDevice)
                     }
                 }
@@ -141,7 +139,7 @@ class BleManager(private val context: Context) {
             return
         }
 
-        stopScan() // Vorherigen Scan sauber beenden
+        stopScan()
 
         val scanner = bluetoothAdapter?.bluetoothLeScanner
         if (scanner == null) {
@@ -274,9 +272,12 @@ class BleManager(private val context: Context) {
 
             if (newState == BluetoothProfile.STATE_CONNECTED && status == BluetoothGatt.GATT_SUCCESS) {
                 if (gatt === activeGatt) {
-                    Log.d(TAG, "GATT Verbunden mit $deviceName. MTU & Dienst-Discovery werden gestartet...")
+                    Log.d(TAG, "GATT Verbunden mit $deviceName. Fordere hohe Verbindungspriorität & MTU an...")
                     saveLastConnectedDevice(gatt.device.address, deviceName)
                     _connectionState.value = ConnectionState.Connecting("$deviceName (Dienste werden gelesen)")
+
+                    gatt.requestConnectionPriority(BluetoothGatt.CONNECTION_PRIORITY_HIGH)
+
                     val mtuRequested = gatt.requestMtu(512)
                     if (!mtuRequested) {
                         gatt.discoverServices()
@@ -309,6 +310,11 @@ class BleManager(private val context: Context) {
                 if (gatt === activeGatt) {
                     activeGatt = null
                     _connectionState.value = ConnectionState.Error("GATT Fehler (Status: $status)")
+                }
+
+                if (!isManualDisconnect && _isAutoConnectEnabled.value && !_lastConnectedAddress.value.isNullOrEmpty()) {
+                    Log.d(TAG, "Automatische Re-Scan-Suche nach GATT-Fehler gestartet...")
+                    startScan()
                 }
             }
         }
@@ -562,9 +568,47 @@ class BleManager(private val context: Context) {
         }
     }
 
+    fun writeCharacteristic(bytes: ByteArray): Boolean {
+        val gatt = activeGatt ?: return false
+        val activeChar = _activeCharacteristic.value ?: return false
+        val service = gatt.getService(activeChar.serviceUuid) ?: return false
+        val charToWrite = service.getCharacteristic(activeChar.uuid) ?: return false
+
+        return try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                val status = gatt.writeCharacteristic(
+                    charToWrite,
+                    bytes,
+                    BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT
+                )
+                status == BluetoothStatusCodes.SUCCESS
+            } else {
+                @Suppress("DEPRECATION")
+                charToWrite.value = bytes
+                @Suppress("DEPRECATION")
+                gatt.writeCharacteristic(charToWrite)
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Fehler beim Schreiben der Charakteristik", e)
+            false
+        }
+    }
+
+    fun writeText(command: String): Boolean {
+        return writeCharacteristic(command.toByteArray(Charsets.UTF_8))
+    }
+
     private fun processReceivedData(bytes: ByteArray, characteristic: BluetoothGattCharacteristic? = null) {
         if (bytes.isEmpty()) return
         val textValue = bytes.toString(Charsets.UTF_8).trim()
+
+        // 0.00 / 0.0 / 0 / 0,00 Werte im Stream filtern/ignorieren
+        val numValue = textValue.replace(',', '.').toDoubleOrNull()
+        if (numValue != null && numValue == 0.0) {
+            Log.d(TAG, "Livedaten-Wert '$textValue' ist 0 -> wird ignoriert")
+            return
+        }
+
         val hexValue = bytes.joinToString(" ") { "%02X".format(it) }
         val charUuid = characteristic?.uuid?.toString() ?: _activeCharacteristic.value?.uuid?.toString() ?: ""
 
