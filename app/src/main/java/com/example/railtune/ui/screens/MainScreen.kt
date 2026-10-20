@@ -11,9 +11,11 @@ import androidx.compose.animation.core.spring
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -23,9 +25,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
@@ -128,47 +128,52 @@ fun MainScreen(viewModel: BleViewModel) {
         }
     }
 
-    var showEsp32CodeDialog by remember { mutableStateOf(false) }
-
-    val topTitleText = when (val state = connectionState) {
-        is ConnectionState.Connected -> "Railtune • ${state.deviceName}"
-        is ConnectionState.Connecting -> "Railtune • Verbinde..."
-        else -> "Railtune"
-    }
-
     Scaffold(
-        topBar = {
-            TopAppBar(
-                title = {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        if (connectionState is ConnectionState.Connected) {
-                            Box(
-                                modifier = Modifier
-                                    .size(10.dp)
-                                    .clip(CircleShape)
-                                    .background(Color(0xFF00E676))
-                            )
-                            Spacer(modifier = Modifier.width(8.dp))
-                        }
-                        Text(
-                            text = topTitleText,
-                            style = MaterialTheme.typography.titleLarge,
-                            fontWeight = FontWeight.Bold
-                        )
-                    }
-                },
-                actions = {
-                    IconButton(onClick = { showEsp32CodeDialog = true }) {
-                        Icon(
-                            imageVector = Icons.Default.Code,
-                            contentDescription = "ESP32 Code Beispiel"
-                        )
-                    }
-                },
-                colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = MaterialTheme.colorScheme.surfaceVariant
+        bottomBar = {
+            NavigationBar(
+                containerColor = Color.Black,
+                contentColor = Color.White
+            ) {
+                NavigationBarItem(
+                    selected = selectedTabIndex == 0,
+                    onClick = { selectedTabIndex = 0 },
+                    icon = { Icon(Icons.Default.PlayArrow, contentDescription = null) },
+                    label = { Text("Fahren") },
+                    colors = NavigationBarItemDefaults.colors(
+                        selectedIconColor = Color.White,
+                        selectedTextColor = Color.White,
+                        indicatorColor = Color(0xFF424242),
+                        unselectedIconColor = Color.LightGray,
+                        unselectedTextColor = Color.LightGray
+                    )
                 )
-            )
+                NavigationBarItem(
+                    selected = selectedTabIndex == 1,
+                    onClick = { selectedTabIndex = 1 },
+                    icon = { Icon(Icons.Default.Speed, contentDescription = null) },
+                    label = { Text("Messen") },
+                    colors = NavigationBarItemDefaults.colors(
+                        selectedIconColor = Color.White,
+                        selectedTextColor = Color.White,
+                        indicatorColor = Color(0xFF424242),
+                        unselectedIconColor = Color.LightGray,
+                        unselectedTextColor = Color.LightGray
+                    )
+                )
+                NavigationBarItem(
+                    selected = selectedTabIndex == 2,
+                    onClick = { selectedTabIndex = 2 },
+                    icon = { Icon(Icons.Default.Code, contentDescription = null) },
+                    label = { Text("Programmieren") },
+                    colors = NavigationBarItemDefaults.colors(
+                        selectedIconColor = Color.White,
+                        selectedTextColor = Color.White,
+                        indicatorColor = Color(0xFF424242),
+                        unselectedIconColor = Color.LightGray,
+                        unselectedTextColor = Color.LightGray
+                    )
+                )
+            }
         }
     ) { paddingValues ->
         Column(
@@ -176,28 +181,6 @@ fun MainScreen(viewModel: BleViewModel) {
                 .fillMaxSize()
                 .padding(paddingValues)
         ) {
-            // Tab Row Navigation
-            PrimaryTabRow(selectedTabIndex = selectedTabIndex) {
-                Tab(
-                    selected = selectedTabIndex == 0,
-                    onClick = { selectedTabIndex = 0 },
-                    text = { Text("Messen") },
-                    icon = { Icon(Icons.Default.Speed, contentDescription = null) }
-                )
-                Tab(
-                    selected = selectedTabIndex == 1,
-                    onClick = { selectedTabIndex = 1 },
-                    text = { Text("Programmieren") },
-                    icon = { Icon(Icons.Default.Code, contentDescription = null) }
-                )
-                Tab(
-                    selected = selectedTabIndex == 2,
-                    onClick = { selectedTabIndex = 2 },
-                    text = { Text("Fahren") },
-                    icon = { Icon(Icons.Default.PlayArrow, contentDescription = null) }
-                )
-            }
-
             Column(
                 modifier = Modifier
                     .fillMaxSize()
@@ -238,7 +221,22 @@ fun MainScreen(viewModel: BleViewModel) {
 
                 when (selectedTabIndex) {
                     0 -> {
-                        // Reiter 1: Geschwindigkeit messen
+                        // Reiter 1: Fahren
+                        DrivingScreen(
+                            savedLocos = savedLocos,
+                            railComReadings = railComReadings,
+                            onAddLoco = { name, addr, maxSpd, manufacturer ->
+                                viewModel.addLoco(name, addr, maxSpd, manufacturer)
+                            },
+                            onUpdateLoco = { viewModel.updateLoco(it) },
+                            onRemoveLoco = { viewModel.removeLoco(it) },
+                            onSetLocoSpeed = { addr, spd, fwd -> viewModel.setLocoSpeed(addr, spd, fwd) },
+                            onSetLocoFunction = { addr, func, state -> viewModel.setLocoFunction(addr, func, state) },
+                            onGetLocoInfo = { addr -> viewModel.getLocoInfo(addr) }
+                        )
+                    }
+                    1 -> {
+                        // Reiter 2: Geschwindigkeit messen
                         SpeedMeasurementScreen(
                             connectionState = connectionState,
                             isScanning = isScanning,
@@ -264,8 +262,8 @@ fun MainScreen(viewModel: BleViewModel) {
                             onClearHistory = { viewModel.clearDataHistory() }
                         )
                     }
-                    1 -> {
-                        // Reiter 2: Programmieren (CV Lesen / Schreiben & z21)
+                    2 -> {
+                        // Reiter 3: Programmieren (CV Lesen / Schreiben & z21)
                         ProgrammingScreen(
                             z21Ip = z21Ip,
                             z21Status = z21Status,
@@ -273,23 +271,7 @@ fun MainScreen(viewModel: BleViewModel) {
                             isCvBusy = isCvBusy,
                             onSetZ21Ip = { viewModel.setZ21Ip(it) },
                             onReadCv = { viewModel.readCv(it) },
-                            onWriteCv = { cv, valNum -> viewModel.writeCv(cv, valNum) },
-                            onShowCodeDialog = { showEsp32CodeDialog = true }
-                        )
-                    }
-                    2 -> {
-                        // Reiter 3: Fahren (Lokliste & Steuerung)
-                        DrivingScreen(
-                            savedLocos = savedLocos,
-                            railComReadings = railComReadings,
-                            onAddLoco = { name, addr, maxSpd, manufacturer ->
-                                viewModel.addLoco(name, addr, maxSpd, manufacturer)
-                            },
-                            onUpdateLoco = { viewModel.updateLoco(it) },
-                            onRemoveLoco = { viewModel.removeLoco(it) },
-                            onSetLocoSpeed = { addr, spd, fwd -> viewModel.setLocoSpeed(addr, spd, fwd) },
-                            onSetLocoFunction = { addr, func, state -> viewModel.setLocoFunction(addr, func, state) },
-                            onGetLocoInfo = { addr -> viewModel.getLocoInfo(addr) }
+                            onWriteCv = { cv, valNum -> viewModel.writeCv(cv, valNum) }
                         )
                     }
                 }
@@ -297,9 +279,6 @@ fun MainScreen(viewModel: BleViewModel) {
         }
     }
 
-    if (showEsp32CodeDialog) {
-        Esp32CodeExampleDialog(onDismiss = { showEsp32CodeDialog = false })
-    }
 }
 
 @Composable
@@ -520,8 +499,7 @@ fun ProgrammingScreen(
     isCvBusy: Boolean,
     onSetZ21Ip: (String) -> Unit,
     onReadCv: (Int) -> Unit,
-    onWriteCv: (Int, Int) -> Unit,
-    onShowCodeDialog: () -> Unit
+    onWriteCv: (Int, Int) -> Unit
 ) {
     var cvNumInput by remember { mutableStateOf("1") }
     var cvValueInput by remember { mutableStateOf("3") }
@@ -708,16 +686,6 @@ fun ProgrammingScreen(
             }
         }
 
-        item {
-            OutlinedButton(
-                onClick = onShowCodeDialog,
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Icon(Icons.Default.Code, contentDescription = null)
-                Spacer(modifier = Modifier.width(8.dp))
-                Text("ESP32 C++ Quellcode anzeigen")
-            }
-        }
     }
 
     if (showIpDialog) {
@@ -791,7 +759,6 @@ private fun DecoderManufacturerDropdown(
 }
 
 @Composable
-@OptIn(ExperimentalLayoutApi::class)
 fun DrivingScreen(
     savedLocos: List<Loco>,
     railComReadings: Map<Int, RailComReading>,
@@ -852,29 +819,36 @@ fun DrivingScreen(
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Text(
-                            text = "LOKOMOTIVEN (${savedLocos.size})",
+                            text = "FAHRZEUGE (${savedLocos.size})",
                             style = MaterialTheme.typography.titleMedium,
                             fontWeight = FontWeight.Bold,
                             color = MaterialTheme.colorScheme.primary
                         )
-                        Button(
+                        FilterChip(
+                            selected = false,
                             onClick = { showAddLocoDialog = true },
-                            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp)
-                        ) {
-                            Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(16.dp))
-                            Spacer(modifier = Modifier.width(4.dp))
-                            Text("Lok anlegen", fontSize = 12.sp)
-                        }
+                            label = { Text("Neu", maxLines = 1) },
+                            colors = FilterChipDefaults.filterChipColors(
+                                containerColor = MaterialTheme.colorScheme.surfaceVariant,
+                                labelColor = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        )
                     }
 
-                    if (savedLocos.isEmpty()) {
-                        Text("Keine Loks angelegt. Klicke auf 'Lok anlegen'.")
-                    } else {
-                        FlowRow(
-                            modifier = Modifier.fillMaxWidth(),
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Row(
+                            modifier = Modifier
+                                .weight(1f)
+                                .horizontalScroll(rememberScrollState()),
                             horizontalArrangement = Arrangement.spacedBy(8.dp),
-                            verticalArrangement = Arrangement.spacedBy(2.dp)
+                            verticalAlignment = Alignment.CenterVertically
                         ) {
+                            if (savedLocos.isEmpty()) {
+                                Text("Keine Fahrzeuge angelegt", maxLines = 1)
+                            }
                             savedLocos.sortedBy { it.name.trim().lowercase(Locale.ROOT) }.forEach { loco ->
                                 val isSelected = loco.id == activeLoco?.id
                                 FilterChip(
@@ -883,13 +857,7 @@ fun DrivingScreen(
                                         selectedLocoId = loco.id
                                         targetSpeedKmH = 0f
                                     },
-                                    leadingIcon = { LocoIllustration(loco) },
-                                    label = {
-                                        Text(
-                                            text = loco.name,
-                                            maxLines = 1
-                                        )
-                                    },
+                                    label = { Text(text = loco.name, maxLines = 1) },
                                     colors = FilterChipDefaults.filterChipColors(
                                         containerColor = MaterialTheme.colorScheme.surfaceVariant,
                                         labelColor = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -904,65 +872,21 @@ fun DrivingScreen(
             }
         }
 
-@Composable
-private fun LocoIllustration(loco: Loco) {
-    val colors = listOf(
-        Color(0xFF1565C0), Color(0xFF2E7D32), Color(0xFFC62828), Color(0xFF6A1B9A),
-        Color(0xFFEF6C00), Color(0xFF00838F), Color(0xFFAD1457), Color(0xFF5D4037)
-    )
-    val bodyColor = colors[Math.floorMod(loco.address, colors.size)]
-
-    Canvas(modifier = Modifier.size(22.dp)) {
-        val w = size.width
-        val h = size.height
-        val bodyTop = h * 0.43f
-
-        // Small side-profile locomotive: boiler, cab, chimney, and wheels.
-        drawRoundRect(
-            color = bodyColor,
-            topLeft = Offset(w * 0.08f, bodyTop),
-            size = Size(w * 0.66f, h * 0.30f),
-            cornerRadius = CornerRadius(h * 0.06f)
-        )
-        drawRoundRect(
-            color = bodyColor,
-            topLeft = Offset(w * 0.49f, h * 0.20f),
-            size = Size(w * 0.32f, h * 0.40f),
-            cornerRadius = CornerRadius(h * 0.05f)
-        )
-        drawRect(
-            color = bodyColor,
-            topLeft = Offset(w * 0.17f, h * 0.25f),
-            size = Size(w * 0.12f, h * 0.18f)
-        )
-        drawRoundRect(
-            color = Color.White.copy(alpha = 0.85f),
-            topLeft = Offset(w * 0.57f, h * 0.28f),
-            size = Size(w * 0.15f, h * 0.15f),
-            cornerRadius = CornerRadius(h * 0.02f)
-        )
-        val wheelColor = Color(0xFF263238)
-        drawCircle(wheelColor, radius = h * 0.12f, center = Offset(w * 0.27f, h * 0.78f))
-        drawCircle(wheelColor, radius = h * 0.12f, center = Offset(w * 0.62f, h * 0.78f))
-        drawCircle(Color.White.copy(alpha = 0.8f), radius = h * 0.035f, center = Offset(w * 0.27f, h * 0.78f))
-        drawCircle(Color.White.copy(alpha = 0.8f), radius = h * 0.035f, center = Offset(w * 0.62f, h * 0.78f))
-    }
-}
-
         // Active Loco Fahrpult Header & Row (Links Tacho, Rechts vertikaler Fahrregler)
         activeLoco?.let { loco ->
             val maxLocoSpeed = loco.maxSpeedKmH.coerceAtLeast(1).toFloat()
             val displayedTargetSpeedKmH = targetSpeedKmH.coerceIn(0f, maxLocoSpeed)
             val targetSpeedPercent = (displayedTargetSpeedKmH / maxLocoSpeed * 100f)
             val railComReading = railComReadings[loco.address]
-            // This decoder reports its RailCom speed on a 0..255 scale.
-            // Convert that scale to the locomotive's configured km/h range;
-            // the unmodified RailCom byte remains visible as the raw value.
-            val displaySpeedKmH = railComReading?.rawSpeed
-                ?.coerceIn(0, 255)
-                ?.div(255f)
-                ?.times(maxLocoSpeed)
-                ?: 0f
+            val isDoehlerHaass = loco.decoderManufacturer.equals("Doehler & Haass", ignoreCase = true) ||
+                    loco.decoderManufacturer.equals("D&H", ignoreCase = true)
+            // D&H's RailCom value is calibrated and transmitted in km/h;
+            // Zimo reports the 0..255 speed scale used by this app's setup.
+            val displaySpeedKmH = when {
+                railComReading == null -> 0f
+                isDoehlerHaass -> railComReading.rawSpeed.toFloat()
+                else -> (railComReading.rawSpeed.coerceIn(0, 255) / 255f) * maxLocoSpeed
+            }
             val hasRailComSpeed = railComReading != null
 
             item {
@@ -1924,91 +1848,6 @@ fun GattInspectorDialog(
                 TextButton(onClick = { onDismiss() }) {
                     Text("Abbrechen")
                 }
-            }
-        }
-    )
-}
-
-@Composable
-fun Esp32CodeExampleDialog(onDismiss: () -> Unit) {
-    val exampleCode = """
-        // ESP32 Arduino BLE Server Beispiel für Livedaten
-        #include <BLEDevice.h>
-        #include <BLEServer.h>
-        #include <BLEUtils.h>
-        #include <BLE2902.h>
-
-        #define SERVICE_UUID        "4fa1c001-0401-4051-b02c-35804611243c"
-        #define CHARACTERISTIC_UUID "beb5483e-36e1-4688-b7f5-ea07361b26a8"
-
-        BLECharacteristic *pCharacteristic;
-        bool deviceConnected = false;
-        int counter = 0;
-
-        class MyServerCallbacks: public BLEServerCallbacks {
-            void onConnect(BLEServer* pServer) { deviceConnected = true; }
-            void onDisconnect(BLEServer* pServer) {
-                deviceConnected = false;
-                BLEDevice::startAdvertising();
-            }
-        };
-
-        void setup() {
-            Serial.begin(115200);
-            BLEDevice::init("ESP32_LiveSensor");
-
-            BLEServer *pServer = BLEDevice::createServer();
-            pServer->setCallbacks(new MyServerCallbacks());
-
-            BLEService *pService = pServer->createService(SERVICE_UUID);
-            pCharacteristic = pService->createCharacteristic(
-                                CHARACTERISTIC_UUID,
-                                BLECharacteristic::PROPERTY_READ |
-                                BLECharacteristic::PROPERTY_NOTIFY
-                              );
-
-            pCharacteristic->addDescriptor(new BLE2902());
-            pService->start();
-
-            BLEAdvertising *pAdvertising = BLEDevice::getAdvertising();
-            pAdvertising->addServiceUUID(SERVICE_UUID);
-            BLEDevice::startAdvertising();
-            Serial.println("ESP32 BLE Bereit!");
-        }
-
-        void loop() {
-            if (deviceConnected) {
-                String payload = "Wert: " + String(counter++);
-                pCharacteristic->setValue(payload.c_str());
-                pCharacteristic->notify(); // Livedaten senden!
-                delay(1000); // Jede Sekunde Livedaten
-            }
-        }
-    """.trimIndent()
-
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text("ESP32 Arduino BLE Beispiel") },
-        text = {
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text("Flash diesen Beispielcode auf deinen ESP32, damit er automatisch erkannt wird:")
-                Surface(
-                    color = MaterialTheme.colorScheme.surfaceVariant,
-                    shape = RoundedCornerShape(8.dp),
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Text(
-                        text = exampleCode,
-                        fontFamily = FontFamily.Monospace,
-                        fontSize = 11.sp,
-                        modifier = Modifier.padding(8.dp)
-                    )
-                }
-            }
-        },
-        confirmButton = {
-            TextButton(onClick = onDismiss) {
-                Text("Schließen")
             }
         }
     )
