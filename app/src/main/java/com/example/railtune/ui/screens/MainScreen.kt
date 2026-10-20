@@ -42,6 +42,7 @@ import com.example.railtune.model.DiscoveredGattCharacteristic
 import com.example.railtune.model.DiscoveredGattService
 import com.example.railtune.model.LiveDataPacket
 import com.example.railtune.model.Loco
+import com.example.railtune.model.RailComReading
 import com.example.railtune.viewmodel.BleViewModel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
@@ -83,7 +84,7 @@ fun MainScreen(viewModel: BleViewModel) {
     val cvResult by viewModel.cvResult.collectAsState()
     val isCvBusy by viewModel.isCvBusy.collectAsState()
     val savedLocos by viewModel.savedLocos.collectAsState()
-    val railComSpeedsKmH by viewModel.railComSpeedsKmH.collectAsState()
+    val railComReadings by viewModel.railComReadings.collectAsState()
 
     var selectedTabIndex by remember { mutableIntStateOf(0) }
 
@@ -278,7 +279,7 @@ fun MainScreen(viewModel: BleViewModel) {
                         // Reiter 3: Fahren (Lokliste & Steuerung)
                         DrivingScreen(
                             savedLocos = savedLocos,
-                            railComSpeedsKmH = railComSpeedsKmH,
+                            railComReadings = railComReadings,
                             onAddLoco = { name, addr, maxSpd, manufacturer ->
                                 viewModel.addLoco(name, addr, maxSpd, manufacturer)
                             },
@@ -789,7 +790,7 @@ private fun DecoderManufacturerDropdown(
 @OptIn(ExperimentalLayoutApi::class)
 fun DrivingScreen(
     savedLocos: List<Loco>,
-    railComSpeedsKmH: Map<Int, Float>,
+    railComReadings: Map<Int, RailComReading>,
     onAddLoco: (String, Int, Int, String) -> Loco,
     onUpdateLoco: (Loco) -> Unit,
     onRemoveLoco: (String) -> Unit,
@@ -868,7 +869,7 @@ fun DrivingScreen(
                         FlowRow(
                             modifier = Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.spacedBy(8.dp),
-                            verticalArrangement = Arrangement.spacedBy(4.dp)
+                            verticalArrangement = Arrangement.spacedBy(2.dp)
                         ) {
                             savedLocos.forEach { loco ->
                                 val isSelected = loco.id == activeLoco?.id
@@ -880,7 +881,7 @@ fun DrivingScreen(
                                     },
                                     label = {
                                         Text(
-                                            text = "${loco.name} (DCC ${loco.address})",
+                                            text = loco.name,
                                             maxLines = 1
                                         )
                                     }
@@ -897,8 +898,16 @@ fun DrivingScreen(
             val maxLocoSpeed = loco.maxSpeedKmH.coerceAtLeast(1).toFloat()
             val displayedTargetSpeedKmH = targetSpeedKmH.coerceIn(0f, maxLocoSpeed)
             val targetSpeedPercent = (displayedTargetSpeedKmH / maxLocoSpeed * 100f)
-            val displaySpeedKmH = railComSpeedsKmH[loco.address] ?: 0f
-            val hasRailComSpeed = railComSpeedsKmH.containsKey(loco.address)
+            val railComReading = railComReadings[loco.address]
+            // This decoder reports its RailCom speed on a 0..255 scale.
+            // Convert that scale to the locomotive's configured km/h range;
+            // the unmodified RailCom byte remains visible as the raw value.
+            val displaySpeedKmH = railComReading?.rawSpeed
+                ?.coerceIn(0, 255)
+                ?.div(255f)
+                ?.times(maxLocoSpeed)
+                ?: 0f
+            val hasRailComSpeed = railComReading != null
 
             item {
                 Card(
@@ -1025,30 +1034,52 @@ fun DrivingScreen(
                             }
                         }
 
-                        // Fahrtrichtung unter Tacho und Sollwertregler anzeigen.
+                        // Fahrtrichtung und Stop unter Tacho und Sollwertregler anzeigen.
                         Row(
                             modifier = Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.spacedBy(8.dp)
                         ) {
-                            FilterChip(
-                                selected = isForwardDirection,
-                                onClick = {
-                                    isForwardDirection = true
-                                    onSetLocoSpeed(loco.address, targetSpeedPercent, true)
-                                },
-                                label = { Text("Vorwärts") },
-                                modifier = Modifier.weight(1f)
-                            )
-
-                            FilterChip(
-                                selected = !isForwardDirection,
+                            FilledTonalIconButton(
                                 onClick = {
                                     isForwardDirection = false
                                     onSetLocoSpeed(loco.address, targetSpeedPercent, false)
                                 },
-                                label = { Text("Rückwärts") },
-                                modifier = Modifier.weight(1f)
-                            )
+                                modifier = Modifier.weight(1f),
+                                colors = IconButtonDefaults.filledTonalIconButtonColors(
+                                    containerColor = if (!isForwardDirection) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant,
+                                    contentColor = if (!isForwardDirection) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            ) {
+                                Icon(Icons.Default.ArrowBack, contentDescription = "Rückwärts")
+                            }
+
+                            FilledTonalIconButton(
+                                onClick = {
+                                    isForwardDirection = true
+                                    onSetLocoSpeed(loco.address, targetSpeedPercent, true)
+                                },
+                                modifier = Modifier.weight(1f),
+                                colors = IconButtonDefaults.filledTonalIconButtonColors(
+                                    containerColor = if (isForwardDirection) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant,
+                                    contentColor = if (isForwardDirection) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            ) {
+                                Icon(Icons.Default.ArrowForward, contentDescription = "Vorwärts")
+                            }
+
+                            FilledIconButton(
+                                onClick = {
+                                    targetSpeedKmH = 0f
+                                    onSetLocoSpeed(loco.address, 0f, isForwardDirection)
+                                },
+                                modifier = Modifier.weight(1f),
+                                colors = IconButtonDefaults.filledIconButtonColors(
+                                    containerColor = MaterialTheme.colorScheme.error,
+                                    contentColor = MaterialTheme.colorScheme.onError
+                                )
+                            ) {
+                                Icon(Icons.Default.Stop, contentDescription = "Stop")
+                            }
                         }
                     }
                 }

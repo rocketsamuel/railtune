@@ -5,6 +5,7 @@ import android.util.Log
 import com.example.railtune.model.CvProgrammingMode
 import com.example.railtune.model.CvResult
 import com.example.railtune.model.Loco
+import com.example.railtune.model.RailComReading
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -44,8 +45,8 @@ class Z21Manager(private val context: Context) {
     private val _savedLocos = MutableStateFlow<List<Loco>>(emptyList())
     val savedLocos: StateFlow<List<Loco>> = _savedLocos.asStateFlow()
 
-    private val _railComSpeedsKmH = MutableStateFlow<Map<Int, Float>>(emptyMap())
-    val railComSpeedsKmH: StateFlow<Map<Int, Float>> = _railComSpeedsKmH.asStateFlow()
+    private val _railComReadings = MutableStateFlow<Map<Int, RailComReading>>(emptyMap())
+    val railComReadings: StateFlow<Map<Int, RailComReading>> = _railComReadings.asStateFlow()
 
     private var udpSocket: DatagramSocket? = null
     private var receiveJob: Job? = null
@@ -185,14 +186,12 @@ class Z21Manager(private val context: Context) {
             val options = bytes[13].toInt() and 0xFF
             if ((options and 0x03) == 0) return
 
-            val rawSpeed = bytes[14].toInt() and 0xFF
+            val reading = RailComReading(
+                rawSpeed = bytes[14].toInt() and 0xFF
+            )
 
-            val targetLoco = _savedLocos.value.find { it.address == locoAddr }
-            val maxSpd = (targetLoco?.maxSpeedKmH ?: 160).toFloat()
-            val speedKmH = (rawSpeed.coerceIn(0, 127) / 127f) * maxSpd
-
-            Log.d(TAG, "RailCom Lok $locoAddr: speed=$rawSpeed -> $speedKmH km/h")
-            _railComSpeedsKmH.value = _railComSpeedsKmH.value + (locoAddr to speedKmH)
+            Log.d(TAG, "RailCom Lok $locoAddr: $reading")
+            _railComReadings.value = _railComReadings.value + (locoAddr to reading)
             return
         }
 

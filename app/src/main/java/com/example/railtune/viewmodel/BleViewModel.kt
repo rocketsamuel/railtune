@@ -40,7 +40,7 @@ class BleViewModel(application: Application) : AndroidViewModel(application) {
     val cvResult: StateFlow<CvResult?> = z21Manager.cvResult
     val isCvBusy: StateFlow<Boolean> = z21Manager.isCvBusy
     val savedLocos: StateFlow<List<Loco>> = z21Manager.savedLocos
-    val railComSpeedsKmH: StateFlow<Map<Int, Float>> = z21Manager.railComSpeedsKmH
+    val railComReadings = z21Manager.railComReadings
 
     fun startScan() {
         bleManager.startScan()
