@@ -1,6 +1,7 @@
 package com.example.railtune.z21
 
 import android.content.Context
+import android.os.SystemClock
 import android.util.Log
 import com.example.railtune.model.CvProgrammingMode
 import com.example.railtune.model.CvResult
@@ -13,6 +14,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import java.net.DatagramPacket
 import java.net.DatagramSocket
 import java.net.InetAddress
+import java.util.concurrent.ConcurrentHashMap
 import java.util.UUID
 
 class Z21Manager(private val context: Context) {
@@ -47,6 +49,8 @@ class Z21Manager(private val context: Context) {
 
     private val _railComReadings = MutableStateFlow<Map<Int, RailComReading>>(emptyMap())
     val railComReadings: StateFlow<Map<Int, RailComReading>> = _railComReadings.asStateFlow()
+    private val lastRailComMaximumAt = ConcurrentHashMap<Int, Long>()
+    private val pendingRailComZeroJobs = ConcurrentHashMap<Int, Job>()
 
     private var udpSocket: DatagramSocket? = null
     private var receiveJob: Job? = null
@@ -189,6 +193,33 @@ class Z21Manager(private val context: Context) {
             val reading = RailComReading(
                 rawSpeed = bytes[14].toInt() and 0xFF
             )
+
+            val now = SystemClock.elapsedRealtime()
+            if (reading.rawSpeed == 255) {
+                lastRailComMaximumAt[locoAddr] = now
+                pendingRailComZeroJobs.remove(locoAddr)?.cancel()
+            } else if (reading.rawSpeed == 0) {
+                val lastMaximumAt = lastRailComMaximumAt[locoAddr]
+                if (lastMaximumAt != null && now - lastMaximumAt < 500L) {
+                    Log.d(TAG, "RailCom Lok $locoAddr: transient zero after maximum ignored")
+                    pendingRailComZeroJobs.remove(locoAddr)?.cancel()
+                    pendingRailComZeroJobs[locoAddr] = scope.launch {
+                        delay(500L - (now - lastMaximumAt))
+                        if (lastRailComMaximumAt[locoAddr] == lastMaximumAt &&
+                            _railComReadings.value[locoAddr]?.rawSpeed == 255
+                        ) {
+                            _railComReadings.value = _railComReadings.value + (locoAddr to reading)
+                            Log.d(TAG, "RailCom Lok $locoAddr: zero accepted after debounce")
+                        }
+                        pendingRailComZeroJobs.remove(locoAddr)
+                    }
+                    return
+                }
+                pendingRailComZeroJobs.remove(locoAddr)?.cancel()
+            } else {
+                lastRailComMaximumAt.remove(locoAddr)
+                pendingRailComZeroJobs.remove(locoAddr)?.cancel()
+            }
 
             Log.d(TAG, "RailCom Lok $locoAddr: $reading")
             _railComReadings.value = _railComReadings.value + (locoAddr to reading)

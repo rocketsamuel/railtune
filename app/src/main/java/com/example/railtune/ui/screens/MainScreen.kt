@@ -23,7 +23,9 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
@@ -346,10 +348,12 @@ fun CircularSpeedometerGauge(
             // 2. Active Speed Arc
             val currentSweep = (animatedSpeed / maxSpeed) * sweepAngle
             val arcGradient = Brush.sweepGradient(
-                colors = listOf(
-                    Color(0xFF00E676), // Green
-                    Color(0xFFFFB300), // Amber
-                    Color(0xFFFF1744)  // Red
+                colorStops = arrayOf(
+                    0f to Color(0xFFFF1744),
+                    (40f / 360f) to Color(0xFFFF1744),
+                    (140f / 360f) to Color(0xFF00E676),
+                    (270f / 360f) to Color(0xFFFFB300),
+                    1f to Color(0xFFFF1744)
                 ),
                 center = center
             )
@@ -871,7 +875,7 @@ fun DrivingScreen(
                             horizontalArrangement = Arrangement.spacedBy(8.dp),
                             verticalArrangement = Arrangement.spacedBy(2.dp)
                         ) {
-                            savedLocos.forEach { loco ->
+                            savedLocos.sortedBy { it.name.trim().lowercase(Locale.ROOT) }.forEach { loco ->
                                 val isSelected = loco.id == activeLoco?.id
                                 FilterChip(
                                     selected = isSelected,
@@ -879,12 +883,19 @@ fun DrivingScreen(
                                         selectedLocoId = loco.id
                                         targetSpeedKmH = 0f
                                     },
+                                    leadingIcon = { LocoIllustration(loco) },
                                     label = {
                                         Text(
                                             text = loco.name,
                                             maxLines = 1
                                         )
-                                    }
+                                    },
+                                    colors = FilterChipDefaults.filterChipColors(
+                                        containerColor = MaterialTheme.colorScheme.surfaceVariant,
+                                        labelColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        selectedContainerColor = MaterialTheme.colorScheme.primary,
+                                        selectedLabelColor = MaterialTheme.colorScheme.onPrimary
+                                    )
                                 )
                             }
                         }
@@ -892,6 +903,51 @@ fun DrivingScreen(
                 }
             }
         }
+
+@Composable
+private fun LocoIllustration(loco: Loco) {
+    val colors = listOf(
+        Color(0xFF1565C0), Color(0xFF2E7D32), Color(0xFFC62828), Color(0xFF6A1B9A),
+        Color(0xFFEF6C00), Color(0xFF00838F), Color(0xFFAD1457), Color(0xFF5D4037)
+    )
+    val bodyColor = colors[Math.floorMod(loco.address, colors.size)]
+
+    Canvas(modifier = Modifier.size(22.dp)) {
+        val w = size.width
+        val h = size.height
+        val bodyTop = h * 0.43f
+
+        // Small side-profile locomotive: boiler, cab, chimney, and wheels.
+        drawRoundRect(
+            color = bodyColor,
+            topLeft = Offset(w * 0.08f, bodyTop),
+            size = Size(w * 0.66f, h * 0.30f),
+            cornerRadius = CornerRadius(h * 0.06f)
+        )
+        drawRoundRect(
+            color = bodyColor,
+            topLeft = Offset(w * 0.49f, h * 0.20f),
+            size = Size(w * 0.32f, h * 0.40f),
+            cornerRadius = CornerRadius(h * 0.05f)
+        )
+        drawRect(
+            color = bodyColor,
+            topLeft = Offset(w * 0.17f, h * 0.25f),
+            size = Size(w * 0.12f, h * 0.18f)
+        )
+        drawRoundRect(
+            color = Color.White.copy(alpha = 0.85f),
+            topLeft = Offset(w * 0.57f, h * 0.28f),
+            size = Size(w * 0.15f, h * 0.15f),
+            cornerRadius = CornerRadius(h * 0.02f)
+        )
+        val wheelColor = Color(0xFF263238)
+        drawCircle(wheelColor, radius = h * 0.12f, center = Offset(w * 0.27f, h * 0.78f))
+        drawCircle(wheelColor, radius = h * 0.12f, center = Offset(w * 0.62f, h * 0.78f))
+        drawCircle(Color.White.copy(alpha = 0.8f), radius = h * 0.035f, center = Offset(w * 0.27f, h * 0.78f))
+        drawCircle(Color.White.copy(alpha = 0.8f), radius = h * 0.035f, center = Offset(w * 0.62f, h * 0.78f))
+    }
+}
 
         // Active Loco Fahrpult Header & Row (Links Tacho, Rechts vertikaler Fahrregler)
         activeLoco?.let { loco ->
@@ -959,7 +1015,7 @@ fun DrivingScreen(
                             ) {
                                 Row(
                                     verticalAlignment = Alignment.CenterVertically,
-                                    modifier = Modifier.padding(bottom = 2.dp)
+                                    modifier = Modifier.padding(bottom = 6.dp)
                                 ) {
                                     Icon(
                                         imageVector = Icons.Default.Speed,
@@ -1034,51 +1090,65 @@ fun DrivingScreen(
                             }
                         }
 
-                        // Fahrtrichtung und Stop unter Tacho und Sollwertregler anzeigen.
+                        // Fahrtrichtung unter dem Tacho und Stop unter dem Sollwertregler zentrieren.
                         Row(
                             modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            horizontalArrangement = Arrangement.spacedBy(12.dp),
+                            verticalAlignment = Alignment.CenterVertically
                         ) {
-                            FilledTonalIconButton(
-                                onClick = {
-                                    isForwardDirection = false
-                                    onSetLocoSpeed(loco.address, targetSpeedPercent, false)
-                                },
-                                modifier = Modifier.weight(1f),
-                                colors = IconButtonDefaults.filledTonalIconButtonColors(
-                                    containerColor = if (!isForwardDirection) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant,
-                                    contentColor = if (!isForwardDirection) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant
-                                )
+                            Row(
+                                modifier = Modifier.weight(1.1f),
+                                horizontalArrangement = Arrangement.Center,
+                                verticalAlignment = Alignment.CenterVertically
                             ) {
-                                Icon(Icons.Default.ArrowBack, contentDescription = "Rückwärts")
+                                FilledTonalIconButton(
+                                    onClick = {
+                                        isForwardDirection = false
+                                        onSetLocoSpeed(loco.address, targetSpeedPercent, false)
+                                    },
+                                    modifier = Modifier.size(40.dp),
+                                    colors = IconButtonDefaults.filledTonalIconButtonColors(
+                                        containerColor = if (!isForwardDirection) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant,
+                                        contentColor = if (!isForwardDirection) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                ) {
+                                    Icon(Icons.Default.ArrowBack, contentDescription = "Rückwärts")
+                                }
+
+                                Spacer(modifier = Modifier.width(8.dp))
+
+                                FilledTonalIconButton(
+                                    onClick = {
+                                        isForwardDirection = true
+                                        onSetLocoSpeed(loco.address, targetSpeedPercent, true)
+                                    },
+                                    modifier = Modifier.size(40.dp),
+                                    colors = IconButtonDefaults.filledTonalIconButtonColors(
+                                        containerColor = if (isForwardDirection) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant,
+                                        contentColor = if (isForwardDirection) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                ) {
+                                    Icon(Icons.Default.ArrowForward, contentDescription = "Vorwärts")
+                                }
                             }
 
-                            FilledTonalIconButton(
-                                onClick = {
-                                    isForwardDirection = true
-                                    onSetLocoSpeed(loco.address, targetSpeedPercent, true)
-                                },
-                                modifier = Modifier.weight(1f),
-                                colors = IconButtonDefaults.filledTonalIconButtonColors(
-                                    containerColor = if (isForwardDirection) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant,
-                                    contentColor = if (isForwardDirection) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant
-                                )
+                            Box(
+                                modifier = Modifier.weight(0.8f),
+                                contentAlignment = Alignment.Center
                             ) {
-                                Icon(Icons.Default.ArrowForward, contentDescription = "Vorwärts")
-                            }
-
-                            FilledIconButton(
-                                onClick = {
-                                    targetSpeedKmH = 0f
-                                    onSetLocoSpeed(loco.address, 0f, isForwardDirection)
-                                },
-                                modifier = Modifier.weight(1f),
-                                colors = IconButtonDefaults.filledIconButtonColors(
-                                    containerColor = MaterialTheme.colorScheme.error,
-                                    contentColor = MaterialTheme.colorScheme.onError
-                                )
-                            ) {
-                                Icon(Icons.Default.Stop, contentDescription = "Stop")
+                                FilledIconButton(
+                                    onClick = {
+                                        targetSpeedKmH = 0f
+                                        onSetLocoSpeed(loco.address, 0f, isForwardDirection)
+                                    },
+                                    modifier = Modifier.size(40.dp),
+                                    colors = IconButtonDefaults.filledIconButtonColors(
+                                        containerColor = MaterialTheme.colorScheme.error,
+                                        contentColor = MaterialTheme.colorScheme.onError
+                                    )
+                                ) {
+                                    Icon(Icons.Default.Stop, contentDescription = "Stop")
+                                }
                             }
                         }
                     }
