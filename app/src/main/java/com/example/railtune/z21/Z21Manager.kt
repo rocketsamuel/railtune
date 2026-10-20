@@ -4,7 +4,6 @@ import android.content.Context
 import android.util.Log
 import com.example.railtune.model.CvProgrammingMode
 import com.example.railtune.model.CvResult
-import com.example.railtune.model.LiveDataPacket
 import com.example.railtune.model.Loco
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -13,7 +12,6 @@ import kotlinx.coroutines.flow.asStateFlow
 import java.net.DatagramPacket
 import java.net.DatagramSocket
 import java.net.InetAddress
-import java.util.Locale
 import java.util.UUID
 
 class Z21Manager(private val context: Context) {
@@ -46,8 +44,8 @@ class Z21Manager(private val context: Context) {
     private val _savedLocos = MutableStateFlow<List<Loco>>(emptyList())
     val savedLocos: StateFlow<List<Loco>> = _savedLocos.asStateFlow()
 
-    private val _z21LiveDataStream = MutableStateFlow<LiveDataPacket?>(null)
-    val z21LiveDataStream: StateFlow<LiveDataPacket?> = _z21LiveDataStream.asStateFlow()
+    private val _railComSpeedsKmH = MutableStateFlow<Map<Int, Float>>(emptyMap())
+    val railComSpeedsKmH: StateFlow<Map<Int, Float>> = _railComSpeedsKmH.asStateFlow()
 
     private var udpSocket: DatagramSocket? = null
     private var receiveJob: Job? = null
@@ -182,64 +180,25 @@ class Z21Manager(private val context: Context) {
         }
 
         // LAN_RAILCOM_DATACHANGED Response (0x0088)
-        if (headerId == 0x0088 && bytes.size >= 12) {
+        if (headerId == 0x0088 && length >= 17 && bytes.size >= 17) {
             val locoAddr = (bytes[4].toInt() and 0xFF) or ((bytes[5].toInt() and 0xFF) shl 8)
-            val type = bytes[10].toInt() and 0xFF
-            val rawVal = bytes[11].toInt() and 0xFF
+            val options = bytes[13].toInt() and 0xFF
+            if ((options and 0x03) == 0) return
+
+            val rawSpeed = bytes[14].toInt() and 0xFF
 
             val targetLoco = _savedLocos.value.find { it.address == locoAddr }
             val maxSpd = (targetLoco?.maxSpeedKmH ?: 160).toFloat()
+            val speedKmH = (rawSpeed.coerceIn(0, 127) / 127f) * maxSpd
 
-            // Umrechnung der Fahrstufen (0..127) in km/h bezogen auf maxSpeedKmH der Lok
-            val realKmH = if (rawVal in 1..127) {
-                (rawVal / 127f) * maxSpd
-            } else if (rawVal > 127 && rawVal <= maxSpd.toInt()) {
-                rawVal.toFloat()
-            } else if (rawVal > maxSpd.toInt()) {
-                (rawVal % 128 / 127f) * maxSpd
-            } else {
-                0f
-            }
-
-            Log.d(TAG, "RailCom Lok $locoAddr: raw=$rawVal (type=$type) -> $realKmH km/h")
-            _z21LiveDataStream.value = LiveDataPacket(
-                rawBytes = "$realKmH".toByteArray(),
-                textValue = String.format(Locale.US, "%.1f", realKmH)
-            )
+            Log.d(TAG, "RailCom Lok $locoAddr: speed=$rawSpeed -> $speedKmH km/h")
+            _railComSpeedsKmH.value = _railComSpeedsKmH.value + (locoAddr to speedKmH)
             return
         }
 
         // X-Header check (0x0040 = LAN_X_HEADER)
         if (headerId == 0x0040 && bytes.size >= 5) {
             val xHeader = bytes[4].toInt() and 0xFF
-
-            // LAN_X_LOCO_INFO (0xEF)
-            if (xHeader == 0xEF && bytes.size >= 9) {
-                val addrHigh = bytes[5].toInt() and 0xFF
-                val addrLow = bytes[6].toInt() and 0xFF
-                val locoAddr = if ((addrHigh and 0xC0) == 0xC0) {
-                    ((addrHigh and 0x3F) shl 8) or addrLow
-                } else {
-                    addrLow
-                }
-
-                // Byte 8 enthält die Fahrstufe (0..127)
-                val speedStepByte = bytes[8].toInt() and 0x7F
-                val targetLoco = _savedLocos.value.find { it.address == locoAddr }
-                val maxSpd = (targetLoco?.maxSpeedKmH ?: 160).toFloat()
-
-                val actualKmH = when {
-                    speedStepByte <= 1 -> 0f
-                    else -> ((speedStepByte - 1) / 126f) * maxSpd
-                }
-
-                Log.d(TAG, "LAN_X_LOCO_INFO Lok $locoAddr -> Step $speedStepByte = $actualKmH km/h")
-                _z21LiveDataStream.value = LiveDataPacket(
-                    rawBytes = "$actualKmH".toByteArray(),
-                    textValue = String.format(Locale.US, "%.1f", actualKmH)
-                )
-                return
-            }
 
             // LAN_X_CV_RESULT (0x64 0x14)
             if (xHeader == 0x64 && bytes.size >= 9) {
@@ -439,13 +398,18 @@ class Z21Manager(private val context: Context) {
     }
 
     // Loco Storage Management
-    fun addLoco(name: String, address: Int, maxSpeedKmH: Int = 160, category: String = "Elektro"): Loco {
+    fun addLoco(
+        name: String,
+        address: Int,
+        maxSpeedKmH: Int = 160,
+        decoderManufacturer: String = ""
+    ): Loco {
         val newLoco = Loco(
             id = UUID.randomUUID().toString(),
             name = name.ifBlank { "Lok $address" },
             address = address.coerceIn(1, 9999),
             maxSpeedKmH = maxSpeedKmH,
-            category = category
+            decoderManufacturer = decoderManufacturer
         )
         val list = _savedLocos.value.toMutableList()
         list.add(0, newLoco)
@@ -458,9 +422,26 @@ class Z21Manager(private val context: Context) {
         saveLocosToPrefs(list)
     }
 
+    fun updateLoco(loco: Loco) {
+        val list = _savedLocos.value.map { existing ->
+            if (existing.id == loco.id) {
+                loco.copy(
+                    name = loco.name.ifBlank { "Lok ${loco.address}" },
+                    address = loco.address.coerceIn(1, 9999),
+                    maxSpeedKmH = loco.maxSpeedKmH.coerceAtLeast(1)
+                )
+            } else {
+                existing
+            }
+        }
+        saveLocosToPrefs(list)
+    }
+
     private fun saveLocosToPrefs(locos: List<Loco>) {
         _savedLocos.value = locos
-        val serialized = locos.joinToString(";") { "${it.id}|${it.name}|${it.address}|${it.maxSpeedKmH}|${it.category}" }
+        val serialized = locos.joinToString(";") {
+            "${it.id}|${it.name}|${it.address}|${it.maxSpeedKmH}|${it.category}|${it.decoderManufacturer}"
+        }
         prefs.edit().putString(KEY_LOCO_DATA, serialized).apply()
     }
 
@@ -483,7 +464,8 @@ class Z21Manager(private val context: Context) {
                             name = parts[1],
                             address = parts[2].toIntOrNull() ?: 3,
                             maxSpeedKmH = parts[3].toIntOrNull() ?: 160,
-                            category = parts[4]
+                            category = parts[4],
+                            decoderManufacturer = parts.getOrNull(5).orEmpty()
                         )
                     } else null
                 }

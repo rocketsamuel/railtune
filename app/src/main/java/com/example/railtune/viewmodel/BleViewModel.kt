@@ -2,7 +2,6 @@ package com.example.railtune.viewmodel
 
 import android.app.Application
 import androidx.lifecycle.AndroidViewModel
-import androidx.lifecycle.viewModelScope
 import com.example.railtune.ble.BleManager
 import com.example.railtune.model.BleDevice
 import com.example.railtune.model.ConnectionState
@@ -12,10 +11,7 @@ import com.example.railtune.model.DiscoveredGattService
 import com.example.railtune.model.LiveDataPacket
 import com.example.railtune.model.Loco
 import com.example.railtune.z21.Z21Manager
-import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.combine
-import kotlinx.coroutines.flow.stateIn
 import java.util.UUID
 
 class BleViewModel(application: Application) : AndroidViewModel(application) {
@@ -27,13 +23,8 @@ class BleViewModel(application: Application) : AndroidViewModel(application) {
     val isScanning: StateFlow<Boolean> = bleManager.isScanning
     val connectionState: StateFlow<ConnectionState> = bleManager.connectionState
 
-    // Kombiniert BLE Sensordaten und z21 UDP RailCom Daten
-    val liveDataStream: StateFlow<LiveDataPacket?> = combine(
-        bleManager.liveDataStream,
-        z21Manager.z21LiveDataStream
-    ) { blePacket, z21Packet ->
-        z21Packet ?: blePacket
-    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
+    // BLE-Messdaten bleiben getrennt von RailCom-Rückmeldungen der z21.
+    val liveDataStream: StateFlow<LiveDataPacket?> = bleManager.liveDataStream
 
     val dataHistory: StateFlow<List<LiveDataPacket>> = bleManager.dataHistory
     val discoveredGattServices: StateFlow<List<DiscoveredGattService>> = bleManager.discoveredGattServices
@@ -49,6 +40,7 @@ class BleViewModel(application: Application) : AndroidViewModel(application) {
     val cvResult: StateFlow<CvResult?> = z21Manager.cvResult
     val isCvBusy: StateFlow<Boolean> = z21Manager.isCvBusy
     val savedLocos: StateFlow<List<Loco>> = z21Manager.savedLocos
+    val railComSpeedsKmH: StateFlow<Map<Int, Float>> = z21Manager.railComSpeedsKmH
 
     fun startScan() {
         bleManager.startScan()
@@ -115,12 +107,21 @@ class BleViewModel(application: Application) : AndroidViewModel(application) {
         z21Manager.writeCv(cvNum, value)
     }
 
-    fun addLoco(name: String, address: Int, maxSpeedKmH: Int = 160, category: String = "Elektro"): Loco {
-        return z21Manager.addLoco(name, address, maxSpeedKmH, category)
+    fun addLoco(
+        name: String,
+        address: Int,
+        maxSpeedKmH: Int = 160,
+        decoderManufacturer: String = ""
+    ): Loco {
+        return z21Manager.addLoco(name, address, maxSpeedKmH, decoderManufacturer)
     }
 
     fun removeLoco(locoId: String) {
         z21Manager.removeLoco(locoId)
+    }
+
+    fun updateLoco(loco: Loco) {
+        z21Manager.updateLoco(loco)
     }
 
     fun getLocoInfo(locoAddress: Int) {

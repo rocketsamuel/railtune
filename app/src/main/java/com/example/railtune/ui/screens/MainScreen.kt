@@ -83,6 +83,7 @@ fun MainScreen(viewModel: BleViewModel) {
     val cvResult by viewModel.cvResult.collectAsState()
     val isCvBusy by viewModel.isCvBusy.collectAsState()
     val savedLocos by viewModel.savedLocos.collectAsState()
+    val railComSpeedsKmH by viewModel.railComSpeedsKmH.collectAsState()
 
     var selectedTabIndex by remember { mutableIntStateOf(0) }
 
@@ -277,8 +278,11 @@ fun MainScreen(viewModel: BleViewModel) {
                         // Reiter 3: Fahren (Lokliste & Steuerung)
                         DrivingScreen(
                             savedLocos = savedLocos,
-                            latestPacket = liveDataPacket,
-                            onAddLoco = { name, addr, maxSpd, cat -> viewModel.addLoco(name, addr, maxSpd, cat) },
+                            railComSpeedsKmH = railComSpeedsKmH,
+                            onAddLoco = { name, addr, maxSpd, manufacturer ->
+                                viewModel.addLoco(name, addr, maxSpd, manufacturer)
+                            },
+                            onUpdateLoco = { viewModel.updateLoco(it) },
                             onRemoveLoco = { viewModel.removeLoco(it) },
                             onSetLocoSpeed = { addr, spd, fwd -> viewModel.setLocoSpeed(addr, spd, fwd) },
                             onSetLocoFunction = { addr, func, state -> viewModel.setLocoFunction(addr, func, state) },
@@ -304,7 +308,10 @@ fun CircularSpeedometerGauge(
 ) {
     val animatedSpeed by animateFloatAsState(
         targetValue = speed.coerceIn(0f, maxSpeed),
-        animationSpec = spring(stiffness = Spring.StiffnessMedium),
+        animationSpec = spring(
+            dampingRatio = Spring.DampingRatioNoBouncy,
+            stiffness = Spring.StiffnessLow
+        ),
         label = "speedAnimation"
     )
 
@@ -413,9 +420,8 @@ fun CircularSpeedometerGauge(
             horizontalAlignment = Alignment.CenterHorizontally,
             modifier = Modifier.padding(top = 12.dp)
         ) {
-            val speedInt = animatedSpeed.toInt()
             Text(
-                text = "$speedInt",
+                text = animatedSpeed.toInt().toString(),
                 fontSize = 38.sp,
                 fontWeight = FontWeight.Bold,
                 fontFamily = FontFamily.Monospace,
@@ -740,23 +746,66 @@ fun ProgrammingScreen(
 }
 
 @Composable
+private fun DecoderManufacturerDropdown(
+    selectedManufacturer: String,
+    onManufacturerSelected: (String) -> Unit
+) {
+    var expanded by remember { mutableStateOf(false) }
+    val manufacturers = listOf("Zimo", "Doehler & Haass")
+
+    Box(modifier = Modifier.fillMaxWidth()) {
+        OutlinedButton(
+            onClick = { expanded = true },
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(selectedManufacturer.ifBlank { "Decoder-Hersteller auswählen" })
+                Icon(Icons.Default.ArrowDropDown, contentDescription = null)
+            }
+        }
+
+        DropdownMenu(
+            expanded = expanded,
+            onDismissRequest = { expanded = false }
+        ) {
+            manufacturers.forEach { manufacturer ->
+                DropdownMenuItem(
+                    text = { Text(manufacturer) },
+                    onClick = {
+                        onManufacturerSelected(manufacturer)
+                        expanded = false
+                    }
+                )
+            }
+        }
+    }
+}
+
+@Composable
+@OptIn(ExperimentalLayoutApi::class)
 fun DrivingScreen(
     savedLocos: List<Loco>,
-    latestPacket: LiveDataPacket?,
+    railComSpeedsKmH: Map<Int, Float>,
     onAddLoco: (String, Int, Int, String) -> Loco,
+    onUpdateLoco: (Loco) -> Unit,
     onRemoveLoco: (String) -> Unit,
     onSetLocoSpeed: (Int, Float, Boolean) -> Unit,
     onSetLocoFunction: (Int, Int, Boolean) -> Unit,
     onGetLocoInfo: (Int) -> Unit
 ) {
     var selectedLocoId by remember { mutableStateOf(savedLocos.firstOrNull()?.id ?: "") }
-    var speedSliderValue by remember { mutableFloatStateOf(0f) }
+    var targetSpeedKmH by remember { mutableFloatStateOf(0f) }
     var isForwardDirection by remember { mutableStateOf(true) }
     var isLightOn by remember { mutableStateOf(false) }
     var isSoundOn by remember { mutableStateOf(false) }
     var isWhistleOn by remember { mutableStateOf(false) }
 
     var showAddLocoDialog by remember { mutableStateOf(false) }
+    var editingLoco by remember { mutableStateOf<Loco?>(null) }
 
     val activeLoco = savedLocos.find { it.id == selectedLocoId } ?: savedLocos.firstOrNull()
 
@@ -816,9 +865,10 @@ fun DrivingScreen(
                     if (savedLocos.isEmpty()) {
                         Text("Keine Loks angelegt. Klicke auf 'Lok anlegen'.")
                     } else {
-                        Row(
+                        FlowRow(
                             modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalArrangement = Arrangement.spacedBy(4.dp)
                         ) {
                             savedLocos.forEach { loco ->
                                 val isSelected = loco.id == activeLoco?.id
@@ -826,9 +876,14 @@ fun DrivingScreen(
                                     selected = isSelected,
                                     onClick = {
                                         selectedLocoId = loco.id
-                                        speedSliderValue = 0f
+                                        targetSpeedKmH = 0f
                                     },
-                                    label = { Text("${loco.name} (DCC ${loco.address})") }
+                                    label = {
+                                        Text(
+                                            text = "${loco.name} (DCC ${loco.address})",
+                                            maxLines = 1
+                                        )
+                                    }
                                 )
                             }
                         }
@@ -839,12 +894,11 @@ fun DrivingScreen(
 
         // Active Loco Fahrpult Header & Row (Links Tacho, Rechts vertikaler Fahrregler)
         activeLoco?.let { loco ->
-            val maxLocoSpeed = loco.maxSpeedKmH.toFloat()
-            val measuredSpeed = parseSpeedFromText(latestPacket?.textValue)
-
-            // Tacho zeigt AUSSENDRÜCKLICH NUR die echte ausgelesene RailCom / Sensor Ist-Geschwindigkeit!
-            val displaySpeedKmH = measuredSpeed ?: 0f
-            val isUsingRealSensor = measuredSpeed != null && measuredSpeed > 0f
+            val maxLocoSpeed = loco.maxSpeedKmH.coerceAtLeast(1).toFloat()
+            val displayedTargetSpeedKmH = targetSpeedKmH.coerceIn(0f, maxLocoSpeed)
+            val targetSpeedPercent = (displayedTargetSpeedKmH / maxLocoSpeed * 100f)
+            val displaySpeedKmH = railComSpeedsKmH[loco.address] ?: 0f
+            val hasRailComSpeed = railComSpeedsKmH.containsKey(loco.address)
 
             item {
                 Card(
@@ -878,8 +932,8 @@ fun DrivingScreen(
                                     color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.8f)
                                 )
                             }
-                            IconButton(onClick = { onRemoveLoco(loco.id) }) {
-                                Icon(Icons.Default.Delete, contentDescription = "Lok löschen", tint = MaterialTheme.colorScheme.error)
+                            IconButton(onClick = { editingLoco = loco }) {
+                                Icon(Icons.Default.Edit, contentDescription = "Lok bearbeiten")
                             }
                         }
 
@@ -899,14 +953,14 @@ fun DrivingScreen(
                                     modifier = Modifier.padding(bottom = 2.dp)
                                 ) {
                                     Icon(
-                                        imageVector = if (isUsingRealSensor) Icons.Default.Sensors else Icons.Default.Speed,
+                                        imageVector = Icons.Default.Speed,
                                         contentDescription = null,
                                         modifier = Modifier.size(14.dp),
-                                        tint = if (isUsingRealSensor) Color(0xFF00E676) else MaterialTheme.colorScheme.primary
+                                        tint = if (hasRailComSpeed) Color(0xFF00E676) else MaterialTheme.colorScheme.primary
                                     )
                                     Spacer(modifier = Modifier.width(4.dp))
                                     Text(
-                                        text = if (isUsingRealSensor) "RailCom Ist-Speed" else "Warte auf RailCom",
+                                        text = if (hasRailComSpeed) "RailCom Ist-Speed" else "Warte auf RailCom",
                                         style = MaterialTheme.typography.labelSmall,
                                         fontWeight = FontWeight.Bold,
                                         color = MaterialTheme.colorScheme.onPrimaryContainer
@@ -924,17 +978,12 @@ fun DrivingScreen(
                             // Rechte Seite: Vertikaler Fahrregler (Slider im Hochformat)
                             Column(
                                 modifier = Modifier
-                                    .weight(0.9f)
-                                    .background(
-                                        MaterialTheme.colorScheme.surface.copy(alpha = 0.65f),
-                                        RoundedCornerShape(14.dp)
-                                    )
-                                    .padding(8.dp),
+                                    .weight(0.8f),
                                 horizontalAlignment = Alignment.CenterHorizontally,
                                 verticalArrangement = Arrangement.spacedBy(6.dp)
                             ) {
                                 Text(
-                                    text = "FAHRREGLER",
+                                    text = "SOLLWERT",
                                     style = MaterialTheme.typography.labelSmall,
                                     fontWeight = FontWeight.Bold,
                                     color = MaterialTheme.colorScheme.primary,
@@ -942,7 +991,7 @@ fun DrivingScreen(
                                 )
 
                                 Text(
-                                    text = "${speedSliderValue.toInt()}%",
+                                    text = "${displayedTargetSpeedKmH.toInt()} km/h",
                                     fontSize = 22.sp,
                                     fontWeight = FontWeight.Bold,
                                     fontFamily = FontFamily.Monospace,
@@ -952,50 +1001,54 @@ fun DrivingScreen(
                                 // Vertical Slider im Hochformat
                                 Box(
                                     modifier = Modifier
-                                        .height(160.dp)
-                                        .width(50.dp),
+                                        .height(150.dp)
+                                        .width(44.dp),
                                     contentAlignment = Alignment.Center
                                 ) {
                                     Slider(
-                                        value = speedSliderValue,
+                                        value = displayedTargetSpeedKmH,
                                         onValueChange = { newValue ->
-                                            speedSliderValue = newValue
-                                            onSetLocoSpeed(loco.address, newValue, isForwardDirection)
+                                            targetSpeedKmH = newValue
+                                            val speedPercent = (newValue / maxLocoSpeed * 100f)
+                                                .coerceIn(0f, 100f)
+                                            onSetLocoSpeed(loco.address, speedPercent, isForwardDirection)
                                         },
-                                        valueRange = 0f..100f,
+                                        valueRange = 0f..maxLocoSpeed,
                                         modifier = Modifier
-                                            .requiredWidth(160.dp)
+                                            .requiredWidth(150.dp)
                                             .graphicsLayer {
                                                 rotationZ = -90f
                                             }
                                     )
                                 }
 
-                                // Fahrtrichtung (Vorwärts / Rückwärts)
-                                Row(
-                                    horizontalArrangement = Arrangement.spacedBy(4.dp)
-                                ) {
-                                    FilterChip(
-                                        selected = isForwardDirection,
-                                        onClick = {
-                                            isForwardDirection = true
-                                            onSetLocoSpeed(loco.address, speedSliderValue, true)
-                                        },
-                                        label = { Text("Vorwärts", fontSize = 10.sp) },
-                                        modifier = Modifier.height(28.dp)
-                                    )
-
-                                    FilterChip(
-                                        selected = !isForwardDirection,
-                                        onClick = {
-                                            isForwardDirection = false
-                                            onSetLocoSpeed(loco.address, speedSliderValue, false)
-                                        },
-                                        label = { Text("Rückwärts", fontSize = 10.sp) },
-                                        modifier = Modifier.height(28.dp)
-                                    )
-                                }
                             }
+                        }
+
+                        // Fahrtrichtung unter Tacho und Sollwertregler anzeigen.
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            FilterChip(
+                                selected = isForwardDirection,
+                                onClick = {
+                                    isForwardDirection = true
+                                    onSetLocoSpeed(loco.address, targetSpeedPercent, true)
+                                },
+                                label = { Text("Vorwärts") },
+                                modifier = Modifier.weight(1f)
+                            )
+
+                            FilterChip(
+                                selected = !isForwardDirection,
+                                onClick = {
+                                    isForwardDirection = false
+                                    onSetLocoSpeed(loco.address, targetSpeedPercent, false)
+                                },
+                                label = { Text("Rückwärts") },
+                                modifier = Modifier.weight(1f)
+                            )
                         }
                     }
                 }
@@ -1060,6 +1113,7 @@ fun DrivingScreen(
         var newName by remember { mutableStateOf("") }
         var newAddr by remember { mutableStateOf("3") }
         var newMaxSpd by remember { mutableStateOf("160") }
+        var newDecoderManufacturer by remember { mutableStateOf("") }
 
         AlertDialog(
             onDismissRequest = { showAddLocoDialog = false },
@@ -1087,14 +1141,19 @@ fun DrivingScreen(
                         singleLine = true,
                         modifier = Modifier.fillMaxWidth()
                     )
+                    DecoderManufacturerDropdown(
+                        selectedManufacturer = newDecoderManufacturer,
+                        onManufacturerSelected = { newDecoderManufacturer = it }
+                    )
                 }
             },
             confirmButton = {
                 Button(
+                    enabled = newDecoderManufacturer.isNotBlank(),
                     onClick = {
                         val addr = newAddr.toIntOrNull() ?: 3
                         val spd = newMaxSpd.toIntOrNull() ?: 160
-                        onAddLoco(newName, addr, spd, "Elektro")
+                        onAddLoco(newName, addr, spd, newDecoderManufacturer)
                         showAddLocoDialog = false
                     }
                 ) {
@@ -1103,6 +1162,86 @@ fun DrivingScreen(
             },
             dismissButton = {
                 TextButton(onClick = { showAddLocoDialog = false }) {
+                    Text("Abbrechen")
+                }
+            }
+        )
+    }
+
+    editingLoco?.let { loco ->
+        var editName by remember(loco.id) { mutableStateOf(loco.name) }
+        var editAddress by remember(loco.id) { mutableStateOf(loco.address.toString()) }
+        var editMaxSpeed by remember(loco.id) { mutableStateOf(loco.maxSpeedKmH.toString()) }
+        var editDecoderManufacturer by remember(loco.id) { mutableStateOf(loco.decoderManufacturer) }
+
+        AlertDialog(
+            onDismissRequest = { editingLoco = null },
+            title = { Text("Lok bearbeiten") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedTextField(
+                        value = editName,
+                        onValueChange = { editName = it },
+                        label = { Text("Lokname") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    OutlinedTextField(
+                        value = editAddress,
+                        onValueChange = { editAddress = it },
+                        label = { Text("DCC-Adresse (1–9999)") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    OutlinedTextField(
+                        value = editMaxSpeed,
+                        onValueChange = { editMaxSpeed = it },
+                        label = { Text("Max. Geschwindigkeit (km/h)") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    DecoderManufacturerDropdown(
+                        selectedManufacturer = editDecoderManufacturer,
+                        onManufacturerSelected = { editDecoderManufacturer = it }
+                    )
+                    TextButton(
+                        onClick = {
+                            onRemoveLoco(loco.id)
+                            if (selectedLocoId == loco.id) {
+                                selectedLocoId = savedLocos.firstOrNull { it.id != loco.id }?.id.orEmpty()
+                            }
+                            editingLoco = null
+                        },
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Icon(Icons.Default.Delete, contentDescription = null)
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text("Fahrzeug löschen", color = MaterialTheme.colorScheme.error)
+                    }
+                }
+            },
+            confirmButton = {
+                Button(
+                    enabled = (editAddress.toIntOrNull()?.let { it in 1..9999 } == true) &&
+                        (editMaxSpeed.toIntOrNull() ?: 0) > 0 &&
+                        editDecoderManufacturer.isNotBlank(),
+                    onClick = {
+                        onUpdateLoco(
+                            loco.copy(
+                                name = editName,
+                                address = editAddress.toInt(),
+                                maxSpeedKmH = editMaxSpeed.toInt(),
+                                decoderManufacturer = editDecoderManufacturer
+                            )
+                        )
+                        editingLoco = null
+                    }
+                ) {
+                    Text("Speichern")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { editingLoco = null }) {
                     Text("Abbrechen")
                 }
             }
