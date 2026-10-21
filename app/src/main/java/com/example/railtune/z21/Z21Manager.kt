@@ -509,6 +509,16 @@ class Z21Manager(private val context: Context) {
         saveLocosToPrefs(list)
     }
 
+    /** Merge imported vehicles by DCC address; imported data replaces a matching address. */
+    fun importLocos(imported: List<Loco>) {
+        val importedAddresses = imported.mapTo(mutableSetOf()) { it.address }
+        val importedIds = imported.mapTo(mutableSetOf()) { it.id }
+        val merged = imported + _savedLocos.value.filter {
+            it.address !in importedAddresses && it.id !in importedIds
+        }
+        saveLocosToPrefs(merged.distinctBy { it.address }.distinctBy { it.id })
+    }
+
     private fun saveLocosToPrefs(locos: List<Loco>) {
         _savedLocos.value = locos
         val serialized = locos.joinToString(";") {

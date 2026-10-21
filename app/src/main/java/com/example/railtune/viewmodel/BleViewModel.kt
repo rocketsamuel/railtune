@@ -129,6 +129,10 @@ class BleViewModel(application: Application) : AndroidViewModel(application) {
         z21Manager.updateLoco(loco)
     }
 
+    fun importLocos(locos: List<Loco>) {
+        z21Manager.importLocos(locos)
+    }
+
     fun getLocoInfo(locoAddress: Int) {
         z21Manager.getLocoInfo(locoAddress)
     }

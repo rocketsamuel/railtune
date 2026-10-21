@@ -2,6 +2,7 @@ package com.example.railtune.ui.screens
 
 import android.Manifest
 import android.content.pm.PackageManager
+import android.widget.Toast
 import android.os.Build
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -60,6 +61,7 @@ import com.example.railtune.model.DiscoveredGattCharacteristic
 import com.example.railtune.model.DiscoveredGattService
 import com.example.railtune.model.LiveDataPacket
 import com.example.railtune.model.Loco
+import com.example.railtune.model.LocoTransfer
 import com.example.railtune.model.RailComReading
 import com.example.railtune.model.Z21LocoState
 import com.example.railtune.viewmodel.BleViewModel
@@ -274,7 +276,8 @@ fun MainScreen(viewModel: BleViewModel) {
                             onRemoveLoco = { viewModel.removeLoco(it) },
                             onSetLocoSpeed = { addr, spd, fwd -> viewModel.setLocoSpeed(addr, spd, fwd) },
                             onSetLocoFunction = { addr, func, state -> viewModel.setLocoFunction(addr, func, state) },
-                            onGetLocoInfo = { addr -> viewModel.getLocoInfo(addr) }
+                            onGetLocoInfo = { addr -> viewModel.getLocoInfo(addr) },
+                            onImportLocos = { viewModel.importLocos(it) }
                         )
                     }
                     1 -> {
@@ -1130,8 +1133,32 @@ fun DrivingScreen(
     onRemoveLoco: (String) -> Unit,
     onSetLocoSpeed: (Int, Float, Boolean) -> Unit,
     onSetLocoFunction: (Int, Int, Boolean) -> Unit,
-    onGetLocoInfo: (Int) -> Unit
+    onGetLocoInfo: (Int) -> Unit,
+    onImportLocos: (List<Loco>) -> Unit
 ) {
+    val context = LocalContext.current
+    val exportLauncher = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/json")) { uri ->
+        if (uri != null) runCatching {
+            context.contentResolver.openOutputStream(uri)?.bufferedWriter()?.use { it.write(LocoTransfer.encode(savedLocos)) }
+                ?: error("Datei konnte nicht geschrieben werden.")
+        }.onSuccess {
+            Toast.makeText(context, "Fahrzeuge exportiert", Toast.LENGTH_SHORT).show()
+        }.onFailure {
+            Toast.makeText(context, "Export fehlgeschlagen: ${it.localizedMessage}", Toast.LENGTH_LONG).show()
+        }
+    }
+    val importLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri != null) runCatching {
+            val json = context.contentResolver.openInputStream(uri)?.bufferedReader()?.use { it.readText() }
+                ?: error("Datei konnte nicht gelesen werden.")
+            LocoTransfer.decode(json)
+        }.onSuccess { imported ->
+            onImportLocos(imported)
+            Toast.makeText(context, "${imported.size} Fahrzeuge importiert (gleiche DCC-Adressen ersetzt)", Toast.LENGTH_LONG).show()
+        }.onFailure {
+            Toast.makeText(context, "Import fehlgeschlagen: ${it.localizedMessage}", Toast.LENGTH_LONG).show()
+        }
+    }
     var selectedLocoId by remember { mutableStateOf(savedLocos.firstOrNull()?.id ?: "") }
     var targetSpeedKmH by remember { mutableFloatStateOf(0f) }
     var isForwardDirection by remember { mutableStateOf(true) }
@@ -1196,15 +1223,23 @@ fun DrivingScreen(
                             fontWeight = FontWeight.Bold,
                             color = MaterialTheme.colorScheme.primary
                         )
-                        FilterChip(
-                            selected = false,
-                            onClick = { showAddLocoDialog = true },
-                            label = { Text("Neu", maxLines = 1) },
-                            colors = FilterChipDefaults.filterChipColors(
-                                containerColor = MaterialTheme.colorScheme.surfaceVariant,
-                                labelColor = MaterialTheme.colorScheme.onSurfaceVariant
+                        Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                            IconButton(onClick = { exportLauncher.launch("RailTune-Fahrzeuge.json") }, enabled = savedLocos.isNotEmpty()) {
+                                Icon(Icons.Default.FileUpload, contentDescription = "Fahrzeuge exportieren")
+                            }
+                            IconButton(onClick = { importLauncher.launch(arrayOf("application/json", "text/*")) }) {
+                                Icon(Icons.Default.FileDownload, contentDescription = "Fahrzeuge importieren")
+                            }
+                            FilterChip(
+                                selected = false,
+                                onClick = { showAddLocoDialog = true },
+                                label = { Text("Neu", maxLines = 1) },
+                                colors = FilterChipDefaults.filterChipColors(
+                                    containerColor = MaterialTheme.colorScheme.surfaceVariant,
+                                    labelColor = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
                             )
-                        )
+                        }
                     }
 
                     Row(
