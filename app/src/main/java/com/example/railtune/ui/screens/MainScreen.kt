@@ -777,6 +777,7 @@ private fun LocoIllustrationDropdown(
         LocoIllustrationChoice("br111", "BR 111", R.drawable.br111),
         LocoIllustrationChoice("br111_ob", "BR 111 – o/b", R.drawable.br111_ob),
         LocoIllustrationChoice("br120", "BR 120", R.drawable.br120),
+        LocoIllustrationChoice("br023", "BR 023", R.drawable.br023),
         LocoIllustrationChoice("br139", "BR 139", R.drawable.br139),
         LocoIllustrationChoice("br140", "BR 140", R.drawable.br140),
         LocoIllustrationChoice("br141", "BR 141", R.drawable.br141),
@@ -787,6 +788,7 @@ private fun LocoIllustrationDropdown(
         LocoIllustrationChoice("br187", "BR 187", R.drawable.br187),
         LocoIllustrationChoice("br193_climate", "BR 193 – ClimateHero", R.drawable.br193_climate),
         LocoIllustrationChoice("br193_backbone", "BR 193 – Backbone", R.drawable.br193_backbone),
+        LocoIllustrationChoice("sbb_186_nightpiercer", "SBB 186 – Nightpiercer", R.drawable.sbb_186_nightpiercer),
         LocoIllustrationChoice("rh1293", "Rh 1293", R.drawable.rh1293),
         LocoIllustrationChoice("rh1116", "Rh 1116 – ÖBB", R.drawable.rh1116),
         LocoIllustrationChoice("rh1116_nj", "Rh 1116 – Nightjet", R.drawable.rh1116_nj),
@@ -795,7 +797,11 @@ private fun LocoIllustrationDropdown(
         LocoIllustrationChoice("br212", "BR 212 – Orientrot", R.drawable.br212),
         LocoIllustrationChoice("br212_standard", "BR 212 – Rot", R.drawable.br212_standard),
         LocoIllustrationChoice("br218_or", "BR 218 – Orientrot", R.drawable.br218_or),
-        LocoIllustrationChoice("br218_tee", "BR 218 – TEE", R.drawable.br218_tee)
+        LocoIllustrationChoice("br218_tee", "BR 218 – TEE", R.drawable.br218_tee),
+        LocoIllustrationChoice("br401", "ICE 1 (BR 401)", R.drawable.br401),
+        LocoIllustrationChoice("br402", "ICE 2 (BR 402)", R.drawable.br402),
+        LocoIllustrationChoice("br411", "ICE T (BR 411)", R.drawable.br411),
+        LocoIllustrationChoice("br412", "ICE 4 (BR 412)", R.drawable.br412)
     )
     val selectedIllustration = illustrations.firstOrNull { it.id == selectedIllustrationId }
     val selectedName = selectedIllustration?.label ?: "Kein Bild"
@@ -868,6 +874,7 @@ private fun locoIllustrationResource(id: String): Int? = when (id) {
     "br111" -> R.drawable.br111
     "br111_ob" -> R.drawable.br111_ob
     "br120" -> R.drawable.br120
+    "br023" -> R.drawable.br023
     "br139" -> R.drawable.br139
     "br140" -> R.drawable.br140
     "br141" -> R.drawable.br141
@@ -878,14 +885,20 @@ private fun locoIllustrationResource(id: String): Int? = when (id) {
     "br187" -> R.drawable.br187
     "br193_climate" -> R.drawable.br193_climate
     "br193_backbone" -> R.drawable.br193_backbone
+    "sbb_186_nightpiercer" -> R.drawable.sbb_186_nightpiercer
     "rh1293" -> R.drawable.rh1293
     "rh1116" -> R.drawable.rh1116
     "rh1116_nj" -> R.drawable.rh1116_nj
     "rh1116_rj" -> R.drawable.rh1116_rj
+    "br211" -> R.drawable.br211
     "br212" -> R.drawable.br212
     "br212_standard" -> R.drawable.br212_standard
     "br218_or" -> R.drawable.br218_or
     "br218_tee" -> R.drawable.br218_tee
+    "br401" -> R.drawable.br401
+    "br402" -> R.drawable.br402
+    "br411" -> R.drawable.br411
+    "br412" -> R.drawable.br412
     else -> null
 }
 
