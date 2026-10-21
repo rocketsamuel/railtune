@@ -8,6 +8,7 @@ import com.example.railtune.model.ConnectionState
 import com.example.railtune.model.CvResult
 import com.example.railtune.model.DiscoveredGattCharacteristic
 import com.example.railtune.model.DiscoveredGattService
+import com.example.railtune.model.DccFunctions
 import com.example.railtune.model.LiveDataPacket
 import com.example.railtune.model.Loco
 import com.example.railtune.z21.Z21Manager
@@ -41,6 +42,7 @@ class BleViewModel(application: Application) : AndroidViewModel(application) {
     val isCvBusy: StateFlow<Boolean> = z21Manager.isCvBusy
     val savedLocos: StateFlow<List<Loco>> = z21Manager.savedLocos
     val railComReadings = z21Manager.railComReadings
+    val locoStates = z21Manager.locoStates
 
     fun startScan() {
         bleManager.startScan()
@@ -113,9 +115,10 @@ class BleViewModel(application: Application) : AndroidViewModel(application) {
         maxSpeedKmH: Int = 160,
         decoderManufacturer: String = "",
         illustrationId: String = "",
-        note: String = ""
+        note: String = "",
+        dccFunctions: DccFunctions = DccFunctions()
     ): Loco {
-        return z21Manager.addLoco(name, address, maxSpeedKmH, decoderManufacturer, illustrationId, note)
+        return z21Manager.addLoco(name, address, maxSpeedKmH, decoderManufacturer, illustrationId, note, dccFunctions)
     }
 
     fun removeLoco(locoId: String) {

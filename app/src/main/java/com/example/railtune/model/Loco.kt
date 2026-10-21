@@ -10,7 +10,18 @@ data class Loco(
     val category: String = "Elektro", // Elektro, Diesel, Dampf, Triebwagen
     val decoderManufacturer: String = "",
     val illustrationId: String = "",
-    val note: String = ""
+    val note: String = "",
+    val dccFunctions: DccFunctions = DccFunctions()
+)
+
+data class DccFunctions(
+    val light: Int? = null,
+    val sound: Int? = null,
+    val hornHigh: Int? = null,
+    val hornLow: Int? = null,
+    val cabLight: Int? = null,
+    val zg12Fst1: Int? = null,
+    val zg12Fst2: Int? = null
 )
 
 data class CvResult(

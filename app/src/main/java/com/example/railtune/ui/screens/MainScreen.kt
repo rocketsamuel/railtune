@@ -17,11 +17,14 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.PressInteraction
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -32,16 +35,20 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.res.painterResource
 import androidx.core.content.ContextCompat
 import com.example.railtune.R
 import com.example.railtune.model.BleDevice
+import com.example.railtune.model.DccFunctions
 import com.example.railtune.model.ConnectionState
 import com.example.railtune.model.CvResult
 import com.example.railtune.model.DiscoveredGattCharacteristic
@@ -49,8 +56,10 @@ import com.example.railtune.model.DiscoveredGattService
 import com.example.railtune.model.LiveDataPacket
 import com.example.railtune.model.Loco
 import com.example.railtune.model.RailComReading
+import com.example.railtune.model.Z21LocoState
 import com.example.railtune.viewmodel.BleViewModel
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.isActive
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -91,6 +100,7 @@ fun MainScreen(viewModel: BleViewModel) {
     val isCvBusy by viewModel.isCvBusy.collectAsState()
     val savedLocos by viewModel.savedLocos.collectAsState()
     val railComReadings by viewModel.railComReadings.collectAsState()
+    val locoStates by viewModel.locoStates.collectAsState()
 
     var selectedTabIndex by remember { mutableIntStateOf(0) }
 
@@ -229,8 +239,9 @@ fun MainScreen(viewModel: BleViewModel) {
                         DrivingScreen(
                             savedLocos = savedLocos,
                             railComReadings = railComReadings,
-                            onAddLoco = { name, addr, maxSpd, manufacturer, illustrationId, note ->
-                                viewModel.addLoco(name, addr, maxSpd, manufacturer, illustrationId, note)
+                            locoStates = locoStates,
+                            onAddLoco = { name, addr, maxSpd, manufacturer, illustrationId, note, dccFunctions ->
+                                viewModel.addLoco(name, addr, maxSpd, manufacturer, illustrationId, note, dccFunctions)
                             },
                             onUpdateLoco = { viewModel.updateLoco(it) },
                             onRemoveLoco = { viewModel.removeLoco(it) },
@@ -866,6 +877,91 @@ private data class LocoIllustrationChoice(
     val imageRes: Int?
 )
 
+private data class DccFunctionInputs(
+    val light: String = "",
+    val sound: String = "",
+    val hornHigh: String = "",
+    val hornLow: String = "",
+    val cabLight: String = "",
+    val zg12Fst1: String = "",
+    val zg12Fst2: String = ""
+) {
+    fun isValid(): Boolean = listOf(light, sound, hornHigh, hornLow, cabLight, zg12Fst1, zg12Fst2)
+        .all { value -> value.isBlank() || value.toIntOrNull()?.let { it in 0..63 } == true }
+
+    fun toDccFunctions() = DccFunctions(
+        light = light.toIntOrNull(),
+        sound = sound.toIntOrNull(),
+        hornHigh = hornHigh.toIntOrNull(),
+        hornLow = hornLow.toIntOrNull(),
+        cabLight = cabLight.toIntOrNull(),
+        zg12Fst1 = zg12Fst1.toIntOrNull(),
+        zg12Fst2 = zg12Fst2.toIntOrNull()
+    )
+}
+
+private fun DccFunctions.toInputs() = DccFunctionInputs(
+    light = light?.toString().orEmpty(),
+    sound = sound?.toString().orEmpty(),
+    hornHigh = hornHigh?.toString().orEmpty(),
+    hornLow = hornLow?.toString().orEmpty(),
+    cabLight = cabLight?.toString().orEmpty(),
+    zg12Fst1 = zg12Fst1?.toString().orEmpty(),
+    zg12Fst2 = zg12Fst2?.toString().orEmpty()
+)
+
+private data class DccFunctionDefinition(
+    val label: String,
+    val icon: ImageVector,
+    val functionNumber: Int?,
+    val momentary: Boolean = false
+)
+
+@Composable
+private fun DccFunctionNumberField(
+    label: String,
+    icon: ImageVector,
+    value: String,
+    onValueChange: (String) -> Unit
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        Icon(icon, contentDescription = null, modifier = Modifier.size(22.dp))
+        Text(label, modifier = Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
+        OutlinedTextField(
+            value = value,
+            onValueChange = { input ->
+                if (input.all(Char::isDigit) && input.length <= 2) onValueChange(input)
+            },
+            label = { Text("F-Taste") },
+            placeholder = { Text("–") },
+            singleLine = true,
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+            modifier = Modifier.width(104.dp)
+        )
+    }
+}
+
+@Composable
+private fun DccFunctionAssignmentsEditor(
+    values: DccFunctionInputs,
+    onValuesChange: (DccFunctionInputs) -> Unit
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Text("F-Taste eintragen (0–63); leere Felder blenden die Funktion aus.", style = MaterialTheme.typography.bodySmall)
+        DccFunctionNumberField("Licht", Icons.Default.Lightbulb, values.light) { onValuesChange(values.copy(light = it)) }
+        DccFunctionNumberField("Sound", Icons.Default.VolumeUp, values.sound) { onValuesChange(values.copy(sound = it)) }
+        DccFunctionNumberField("Horn hoch", Icons.Default.Campaign, values.hornHigh) { onValuesChange(values.copy(hornHigh = it)) }
+        DccFunctionNumberField("Horn tief", Icons.Default.Campaign, values.hornLow) { onValuesChange(values.copy(hornLow = it)) }
+        DccFunctionNumberField("Führerstand Beleuchtung", Icons.Default.WbIncandescent, values.cabLight) { onValuesChange(values.copy(cabLight = it)) }
+        DccFunctionNumberField("Zg1/2 aus Fst 1", Icons.Default.LooksOne, values.zg12Fst1) { onValuesChange(values.copy(zg12Fst1 = it)) }
+        DccFunctionNumberField("Zg1/2 aus Fst 2", Icons.Default.LooksTwo, values.zg12Fst2) { onValuesChange(values.copy(zg12Fst2 = it)) }
+    }
+}
+
 private fun locoIllustrationResource(id: String): Int? = when (id) {
     "br101" -> R.drawable.br101
     "br101_50jahre" -> R.drawable.br101_50jahre
@@ -902,11 +998,13 @@ private fun locoIllustrationResource(id: String): Int? = when (id) {
     else -> null
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun DrivingScreen(
     savedLocos: List<Loco>,
     railComReadings: Map<Int, RailComReading>,
-    onAddLoco: (String, Int, Int, String, String, String) -> Loco,
+    locoStates: Map<Int, Z21LocoState>,
+    onAddLoco: (String, Int, Int, String, String, String, DccFunctions) -> Loco,
     onUpdateLoco: (Loco) -> Unit,
     onRemoveLoco: (String) -> Unit,
     onSetLocoSpeed: (Int, Float, Boolean) -> Unit,
@@ -916,18 +1014,27 @@ fun DrivingScreen(
     var selectedLocoId by remember { mutableStateOf(savedLocos.firstOrNull()?.id ?: "") }
     var targetSpeedKmH by remember { mutableFloatStateOf(0f) }
     var isForwardDirection by remember { mutableStateOf(true) }
-    var isLightOn by remember { mutableStateOf(false) }
-    var isSoundOn by remember { mutableStateOf(false) }
-    var isWhistleOn by remember { mutableStateOf(false) }
 
     var showAddLocoDialog by remember { mutableStateOf(false) }
     var editingLoco by remember { mutableStateOf<Loco?>(null) }
 
     val activeLoco = savedLocos.find { it.id == selectedLocoId } ?: savedLocos.firstOrNull()
+    var activeDccFunctionNumbers by remember(activeLoco?.id) { mutableStateOf(emptySet<Int>()) }
+    val activeZ21State = activeLoco?.let { locoStates[it.address] }
 
     LaunchedEffect(savedLocos) {
         if (selectedLocoId.isEmpty() && savedLocos.isNotEmpty()) {
             selectedLocoId = savedLocos.first().id
+        }
+    }
+
+    LaunchedEffect(activeLoco?.id, activeZ21State) {
+        activeZ21State?.let { state ->
+            activeDccFunctionNumbers = state.activeFunctions
+            isForwardDirection = state.isForward
+            activeLoco?.let { loco ->
+                targetSpeedKmH = loco.maxSpeedKmH.coerceAtLeast(1) * state.speedPercent / 100f
+            }
         }
     }
 
@@ -1250,6 +1357,15 @@ fun DrivingScreen(
 
             // Lok Funktionen Card
             item {
+                val functions = listOf(
+                    DccFunctionDefinition("Licht", Icons.Default.Lightbulb, loco.dccFunctions.light),
+                    DccFunctionDefinition("Sound", Icons.Default.VolumeUp, loco.dccFunctions.sound),
+                    DccFunctionDefinition("Horn hoch", Icons.Default.Campaign, loco.dccFunctions.hornHigh, momentary = true),
+                    DccFunctionDefinition("Horn tief", Icons.Default.Campaign, loco.dccFunctions.hornLow, momentary = true),
+                    DccFunctionDefinition("Führerstand Beleuchtung", Icons.Default.WbIncandescent, loco.dccFunctions.cabLight),
+                    DccFunctionDefinition("Zg1/2 aus Fst 1", Icons.Default.LooksOne, loco.dccFunctions.zg12Fst1),
+                    DccFunctionDefinition("Zg1/2 aus Fst 2", Icons.Default.LooksTwo, loco.dccFunctions.zg12Fst2)
+                ).filter { it.functionNumber != null }
                 Card(
                     modifier = Modifier.fillMaxWidth(),
                     colors = CardDefaults.cardColors(
@@ -1266,36 +1382,50 @@ fun DrivingScreen(
                             fontWeight = FontWeight.Bold
                         )
 
-                        Row(
+                        FlowRow(
                             modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalArrangement = Arrangement.spacedBy(8.dp)
                         ) {
-                            FilterChip(
-                                selected = isLightOn,
-                                onClick = {
-                                    isLightOn = !isLightOn
-                                    onSetLocoFunction(loco.address, 0, isLightOn)
-                                },
-                                label = { Text("F0 Licht") }
-                            )
-
-                            FilterChip(
-                                selected = isSoundOn,
-                                onClick = {
-                                    isSoundOn = !isSoundOn
-                                    onSetLocoFunction(loco.address, 1, isSoundOn)
-                                },
-                                label = { Text("F1 Sound") }
-                            )
-
-                            FilterChip(
-                                selected = isWhistleOn,
-                                onClick = {
-                                    isWhistleOn = !isWhistleOn
-                                    onSetLocoFunction(loco.address, 2, isWhistleOn)
-                                },
-                                label = { Text("F2 Pfeife") }
-                            )
+                            functions.forEach { function ->
+                                val functionNumber = function.functionNumber ?: return@forEach
+                                val isOn = functionNumber in activeDccFunctionNumbers
+                                if (function.momentary) {
+                                    val interactionSource = remember(loco.address, functionNumber) {
+                                        MutableInteractionSource()
+                                    }
+                                    LaunchedEffect(loco.address, functionNumber, interactionSource) {
+                                        interactionSource.interactions.collect { interaction ->
+                                            when (interaction) {
+                                                is PressInteraction.Press -> onSetLocoFunction(loco.address, functionNumber, true)
+                                                is PressInteraction.Release,
+                                                is PressInteraction.Cancel -> onSetLocoFunction(loco.address, functionNumber, false)
+                                                else -> Unit
+                                            }
+                                        }
+                                    }
+                                    FilterChip(
+                                        selected = isOn,
+                                        onClick = {},
+                                        interactionSource = interactionSource,
+                                        label = { Icon(function.icon, contentDescription = function.label) }
+                                    )
+                                } else {
+                                    FilterChip(
+                                        selected = isOn,
+                                        onClick = {
+                                            val nextState = !isOn
+                                            activeDccFunctionNumbers = if (nextState) {
+                                                activeDccFunctionNumbers + functionNumber
+                                            } else {
+                                                activeDccFunctionNumbers - functionNumber
+                                            }
+                                            onSetLocoFunction(loco.address, functionNumber, nextState)
+                                        },
+                                        label = { Icon(function.icon, contentDescription = function.label) }
+                                    )
+                                }
+                            }
                         }
                     }
                 }
@@ -1304,18 +1434,29 @@ fun DrivingScreen(
     }
 
     if (showAddLocoDialog) {
+        var addDialogTab by remember { mutableIntStateOf(0) }
         var newName by remember { mutableStateOf("") }
         var newAddr by remember { mutableStateOf("3") }
         var newMaxSpd by remember { mutableStateOf("160") }
         var newDecoderManufacturer by remember { mutableStateOf("") }
         var newIllustrationId by remember { mutableStateOf("") }
         var newNote by remember { mutableStateOf("") }
+        var newDccFunctionInputs by remember { mutableStateOf(DccFunctionInputs()) }
 
         AlertDialog(
             onDismissRequest = { showAddLocoDialog = false },
             title = { Text("Neue Lokomotive anlegen") },
             text = {
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Column(
+                    modifier = Modifier.heightIn(max = 560.dp).verticalScroll(rememberScrollState()),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    TabRow(selectedTabIndex = addDialogTab) {
+                        Tab(selected = addDialogTab == 0, onClick = { addDialogTab = 0 }, text = { Text("Allgemein") })
+                        Tab(selected = addDialogTab == 1, onClick = { addDialogTab = 1 }, text = { Text("DCC") })
+                    }
+                    if (addDialogTab == 0) {
+                        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     OutlinedTextField(
                         value = newName,
                         onValueChange = { newName = it },
@@ -1353,15 +1494,30 @@ fun DrivingScreen(
                         selectedIllustrationId = newIllustrationId,
                         onIllustrationSelected = { newIllustrationId = it }
                     )
+                        }
+                    } else {
+                        DccFunctionAssignmentsEditor(
+                            values = newDccFunctionInputs,
+                            onValuesChange = { newDccFunctionInputs = it }
+                        )
+                    }
                 }
             },
             confirmButton = {
                 Button(
-                    enabled = newDecoderManufacturer.isNotBlank(),
+                    enabled = newDecoderManufacturer.isNotBlank() && newDccFunctionInputs.isValid(),
                     onClick = {
                         val addr = newAddr.toIntOrNull() ?: 3
                         val spd = newMaxSpd.toIntOrNull() ?: 160
-                        onAddLoco(newName, addr, spd, newDecoderManufacturer, newIllustrationId, newNote)
+                        onAddLoco(
+                            newName,
+                            addr,
+                            spd,
+                            newDecoderManufacturer,
+                            newIllustrationId,
+                            newNote,
+                            newDccFunctionInputs.toDccFunctions()
+                        )
                         showAddLocoDialog = false
                     }
                 ) {
@@ -1376,19 +1532,30 @@ fun DrivingScreen(
         )
     }
 
-    editingLoco?.let { loco ->
+    editingLoco?.let { loco: Loco ->
+        var editDialogTab by remember(loco.id) { mutableIntStateOf(0) }
         var editName by remember(loco.id) { mutableStateOf(loco.name) }
         var editAddress by remember(loco.id) { mutableStateOf(loco.address.toString()) }
         var editMaxSpeed by remember(loco.id) { mutableStateOf(loco.maxSpeedKmH.toString()) }
         var editDecoderManufacturer by remember(loco.id) { mutableStateOf(loco.decoderManufacturer) }
         var editIllustrationId by remember(loco.id) { mutableStateOf(loco.illustrationId) }
         var editNote by remember(loco.id) { mutableStateOf(loco.note) }
+        var editDccFunctionInputs by remember(loco.id) { mutableStateOf(loco.dccFunctions.toInputs()) }
 
         AlertDialog(
             onDismissRequest = { editingLoco = null },
             title = { Text("Lok bearbeiten") },
             text = {
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Column(
+                    modifier = Modifier.heightIn(max = 560.dp).verticalScroll(rememberScrollState()),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    TabRow(selectedTabIndex = editDialogTab) {
+                        Tab(selected = editDialogTab == 0, onClick = { editDialogTab = 0 }, text = { Text("Allgemein") })
+                        Tab(selected = editDialogTab == 1, onClick = { editDialogTab = 1 }, text = { Text("DCC") })
+                    }
+                    if (editDialogTab == 0) {
+                        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     OutlinedTextField(
                         value = editName,
                         onValueChange = { editName = it },
@@ -1441,12 +1608,19 @@ fun DrivingScreen(
                         Text("Fahrzeug löschen", color = MaterialTheme.colorScheme.error)
                     }
                 }
+                    } else {
+                        DccFunctionAssignmentsEditor(
+                            values = editDccFunctionInputs,
+                            onValuesChange = { editDccFunctionInputs = it }
+                        )
+                    }
+                }
             },
             confirmButton = {
                 Button(
                     enabled = (editAddress.toIntOrNull()?.let { it in 1..9999 } == true) &&
                         (editMaxSpeed.toIntOrNull() ?: 0) > 0 &&
-                        editDecoderManufacturer.isNotBlank(),
+                        editDecoderManufacturer.isNotBlank() && editDccFunctionInputs.isValid(),
                     onClick = {
                         onUpdateLoco(
                             loco.copy(
@@ -1455,7 +1629,8 @@ fun DrivingScreen(
                                 maxSpeedKmH = editMaxSpeed.toInt(),
                                 decoderManufacturer = editDecoderManufacturer,
                                 illustrationId = editIllustrationId,
-                                note = editNote
+                                note = editNote,
+                                dccFunctions = editDccFunctionInputs.toDccFunctions()
                             )
                         )
                         editingLoco = null
