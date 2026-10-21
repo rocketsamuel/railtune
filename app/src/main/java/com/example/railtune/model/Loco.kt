@@ -9,7 +9,8 @@ data class Loco(
     val maxSpeedKmH: Int = 160,
     val category: String = "Elektro", // Elektro, Diesel, Dampf, Triebwagen
     val decoderManufacturer: String = "",
-    val illustrationId: String = ""
+    val illustrationId: String = "",
+    val note: String = ""
 )
 
 data class CvResult(

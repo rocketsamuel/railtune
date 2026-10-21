@@ -229,8 +229,8 @@ fun MainScreen(viewModel: BleViewModel) {
                         DrivingScreen(
                             savedLocos = savedLocos,
                             railComReadings = railComReadings,
-                            onAddLoco = { name, addr, maxSpd, manufacturer, illustrationId ->
-                                viewModel.addLoco(name, addr, maxSpd, manufacturer, illustrationId)
+                            onAddLoco = { name, addr, maxSpd, manufacturer, illustrationId, note ->
+                                viewModel.addLoco(name, addr, maxSpd, manufacturer, illustrationId, note)
                             },
                             onUpdateLoco = { viewModel.updateLoco(it) },
                             onRemoveLoco = { viewModel.removeLoco(it) },
@@ -906,7 +906,7 @@ private fun locoIllustrationResource(id: String): Int? = when (id) {
 fun DrivingScreen(
     savedLocos: List<Loco>,
     railComReadings: Map<Int, RailComReading>,
-    onAddLoco: (String, Int, Int, String, String) -> Loco,
+    onAddLoco: (String, Int, Int, String, String, String) -> Loco,
     onUpdateLoco: (Loco) -> Unit,
     onRemoveLoco: (String) -> Unit,
     onSetLocoSpeed: (Int, Float, Boolean) -> Unit,
@@ -1082,11 +1082,13 @@ fun DrivingScreen(
                                     fontWeight = FontWeight.Bold,
                                     color = MaterialTheme.colorScheme.onPrimaryContainer
                                 )
-                                Text(
-                                    text = "DCC Adresse: ${loco.address} | Max: ${loco.maxSpeedKmH} km/h",
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.8f)
-                                )
+                                if (loco.note.isNotBlank()) {
+                                    Text(
+                                        text = loco.note,
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.8f)
+                                    )
+                                }
                             }
                             IconButton(onClick = { editingLoco = loco }) {
                                 Icon(Icons.Default.Edit, contentDescription = "Lok bearbeiten")
@@ -1307,6 +1309,7 @@ fun DrivingScreen(
         var newMaxSpd by remember { mutableStateOf("160") }
         var newDecoderManufacturer by remember { mutableStateOf("") }
         var newIllustrationId by remember { mutableStateOf("") }
+        var newNote by remember { mutableStateOf("") }
 
         AlertDialog(
             onDismissRequest = { showAddLocoDialog = false },
@@ -1318,6 +1321,14 @@ fun DrivingScreen(
                         onValueChange = { newName = it },
                         label = { Text("Lok Name (z.B. BR 103)") },
                         singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    OutlinedTextField(
+                        value = newNote,
+                        onValueChange = { newNote = it },
+                        label = { Text("Bemerkung") },
+                        minLines = 2,
+                        maxLines = 3,
                         modifier = Modifier.fillMaxWidth()
                     )
                     OutlinedTextField(
@@ -1350,7 +1361,7 @@ fun DrivingScreen(
                     onClick = {
                         val addr = newAddr.toIntOrNull() ?: 3
                         val spd = newMaxSpd.toIntOrNull() ?: 160
-                        onAddLoco(newName, addr, spd, newDecoderManufacturer, newIllustrationId)
+                        onAddLoco(newName, addr, spd, newDecoderManufacturer, newIllustrationId, newNote)
                         showAddLocoDialog = false
                     }
                 ) {
@@ -1371,6 +1382,7 @@ fun DrivingScreen(
         var editMaxSpeed by remember(loco.id) { mutableStateOf(loco.maxSpeedKmH.toString()) }
         var editDecoderManufacturer by remember(loco.id) { mutableStateOf(loco.decoderManufacturer) }
         var editIllustrationId by remember(loco.id) { mutableStateOf(loco.illustrationId) }
+        var editNote by remember(loco.id) { mutableStateOf(loco.note) }
 
         AlertDialog(
             onDismissRequest = { editingLoco = null },
@@ -1382,6 +1394,14 @@ fun DrivingScreen(
                         onValueChange = { editName = it },
                         label = { Text("Lokname") },
                         singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    OutlinedTextField(
+                        value = editNote,
+                        onValueChange = { editNote = it },
+                        label = { Text("Bemerkung") },
+                        minLines = 2,
+                        maxLines = 3,
                         modifier = Modifier.fillMaxWidth()
                     )
                     OutlinedTextField(
@@ -1434,7 +1454,8 @@ fun DrivingScreen(
                                 address = editAddress.toInt(),
                                 maxSpeedKmH = editMaxSpeed.toInt(),
                                 decoderManufacturer = editDecoderManufacturer,
-                                illustrationId = editIllustrationId
+                                illustrationId = editIllustrationId,
+                                note = editNote
                             )
                         )
                         editingLoco = null

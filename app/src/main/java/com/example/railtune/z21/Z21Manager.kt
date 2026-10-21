@@ -433,7 +433,8 @@ class Z21Manager(private val context: Context) {
         address: Int,
         maxSpeedKmH: Int = 160,
         decoderManufacturer: String = "",
-        illustrationId: String = ""
+        illustrationId: String = "",
+        note: String = ""
     ): Loco {
         val newLoco = Loco(
             id = UUID.randomUUID().toString(),
@@ -441,7 +442,8 @@ class Z21Manager(private val context: Context) {
             address = address.coerceIn(1, 9999),
             maxSpeedKmH = maxSpeedKmH,
             decoderManufacturer = decoderManufacturer,
-            illustrationId = illustrationId
+            illustrationId = illustrationId,
+            note = note
         )
         val list = _savedLocos.value.toMutableList()
         list.add(0, newLoco)
@@ -472,7 +474,7 @@ class Z21Manager(private val context: Context) {
     private fun saveLocosToPrefs(locos: List<Loco>) {
         _savedLocos.value = locos
         val serialized = locos.joinToString(";") {
-            "${it.id}|${it.name}|${it.address}|${it.maxSpeedKmH}|${it.category}|${it.decoderManufacturer}|${it.illustrationId}"
+            "${it.id}|${it.name}|${it.address}|${it.maxSpeedKmH}|${it.category}|${it.decoderManufacturer}|${it.illustrationId}|${it.note}"
         }
         prefs.edit().putString(KEY_LOCO_DATA, serialized).apply()
     }
@@ -503,7 +505,8 @@ class Z21Manager(private val context: Context) {
                                 parts[1].replace(" ", "").contains("BR211", ignoreCase = true) -> "br211"
                                 parts[1].replace(" ", "").contains("BR212", ignoreCase = true) -> "br212"
                                 else -> ""
-                            }
+                            },
+                            note = parts.getOrNull(7).orEmpty()
                         )
                     } else null
                 }
