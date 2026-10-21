@@ -16,6 +16,9 @@ import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.CircleShape
@@ -38,6 +41,7 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
@@ -81,6 +85,7 @@ fun parseSpeedFromText(text: String?): Float? {
 @Composable
 fun MainScreen(viewModel: BleViewModel) {
     val context = LocalContext.current
+    val isWideDisplay = LocalConfiguration.current.screenWidthDp >= 600
 
     val discoveredDevices by viewModel.discoveredDevices.collectAsState()
     val isScanning by viewModel.isScanning.collectAsState()
@@ -104,6 +109,12 @@ fun MainScreen(viewModel: BleViewModel) {
     val locoStates by viewModel.locoStates.collectAsState()
 
     var selectedTabIndex by remember { mutableIntStateOf(0) }
+
+    LaunchedEffect(isWideDisplay) {
+        if (!isWideDisplay && selectedTabIndex == 3) {
+            selectedTabIndex = 0
+        }
+    }
 
     val requiredPermissions = remember {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
@@ -188,6 +199,21 @@ fun MainScreen(viewModel: BleViewModel) {
                         unselectedTextColor = Color.LightGray
                     )
                 )
+                if (isWideDisplay) {
+                    NavigationBarItem(
+                        selected = selectedTabIndex == 3,
+                        onClick = { selectedTabIndex = 3 },
+                        icon = { Icon(Icons.Default.TabletAndroid, contentDescription = null) },
+                        label = { Text("Tablet") },
+                        colors = NavigationBarItemDefaults.colors(
+                            selectedIconColor = Color.White,
+                            selectedTextColor = Color.White,
+                            indicatorColor = Color(0xFF424242),
+                            unselectedIconColor = Color.LightGray,
+                            unselectedTextColor = Color.LightGray
+                        )
+                    )
+                }
             }
         }
     ) { paddingValues ->
@@ -290,11 +316,101 @@ fun MainScreen(viewModel: BleViewModel) {
                             onWriteCv = { cv, valNum -> viewModel.writeCv(cv, valNum) }
                         )
                     }
+                    3 -> if (isWideDisplay) {
+                        TabletModeScreen(
+                            savedLocos = savedLocos,
+                            locoStates = locoStates,
+                            railComReadings = railComReadings,
+                            onGetLocoInfo = { address -> viewModel.getLocoInfo(address) }
+                        )
+                    }
                 }
             }
         }
     }
 
+}
+
+@Composable
+private fun TabletModeScreen(
+    savedLocos: List<Loco>,
+    locoStates: Map<Int, Z21LocoState>,
+    railComReadings: Map<Int, RailComReading>,
+    onGetLocoInfo: (Int) -> Unit
+) {
+    val locoAddresses = remember(savedLocos) { savedLocos.map { it.address }.distinct() }
+
+    LaunchedEffect(locoAddresses) {
+        if (locoAddresses.isNotEmpty()) {
+            while (isActive) {
+                locoAddresses.forEach { address ->
+                    onGetLocoInfo(address)
+                    delay(150)
+                }
+            }
+        }
+    }
+
+    val movingLocos = savedLocos
+        .filter { (locoStates[it.address]?.speedPercent ?: 0f) > 0f }
+        .sortedBy { it.name.trim().lowercase(Locale.ROOT) }
+
+    if (movingLocos.isEmpty()) {
+        Box(
+            modifier = Modifier.fillMaxSize(),
+            contentAlignment = Alignment.Center
+        ) {
+            Text("Keine Fahrzeuge in Bewegung", style = MaterialTheme.typography.titleMedium)
+        }
+    } else {
+        LazyVerticalGrid(
+            columns = GridCells.Adaptive(minSize = 260.dp),
+            modifier = Modifier.fillMaxSize(),
+            contentPadding = PaddingValues(bottom = 8.dp),
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            items(movingLocos, key = { it.id }) { loco ->
+                val locoState = locoStates[loco.address] ?: return@items
+                val maxSpeed = loco.maxSpeedKmH.coerceAtLeast(1).toFloat()
+                val railComReading = railComReadings[loco.address]
+                val isDoehlerHaass = loco.decoderManufacturer.equals("Doehler & Haass", ignoreCase = true) ||
+                    loco.decoderManufacturer.equals("D&H", ignoreCase = true)
+                val speed = when {
+                    railComReading == null -> maxSpeed * locoState.speedPercent / 100f
+                    isDoehlerHaass -> railComReading.rawSpeed.toFloat()
+                    else -> (railComReading.rawSpeed.coerceIn(0, 255) / 255f) * maxSpeed
+                }
+
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = CardDefaults.cardColors(
+                        containerColor = MaterialTheme.colorScheme.primaryContainer
+                    )
+                ) {
+                    Column(
+                        modifier = Modifier.fillMaxWidth().padding(12.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Text(
+                            text = loco.name,
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onPrimaryContainer,
+                            maxLines = 1
+                        )
+                        CircularSpeedometerGauge(
+                            speed = speed,
+                            maxSpeed = maxSpeed,
+                            unit = "km/h",
+                            modifier = Modifier.size(220.dp)
+                        )
+                    }
+                }
+            }
+        }
+    }
 }
 
 @Composable
@@ -797,9 +913,11 @@ private fun LocoIllustrationDropdown(
         LocoIllustrationChoice("br147", "BR 147", R.drawable.br147),
         LocoIllustrationChoice("br152", "BR 152", R.drawable.br152),
         LocoIllustrationChoice("br185", "BR 185", R.drawable.br185),
+        LocoIllustrationChoice("br185_lokomotion", "BR 185 – Lokomotion", R.drawable.br185_lokomotion),
         LocoIllustrationChoice("br187", "BR 187", R.drawable.br187),
         LocoIllustrationChoice("br193_climate", "BR 193 – ClimateHero", R.drawable.br193_climate),
         LocoIllustrationChoice("br193_backbone", "BR 193 – Backbone", R.drawable.br193_backbone),
+        LocoIllustrationChoice("br194", "BR 194", R.drawable.br194),
         LocoIllustrationChoice("sbb_186_nightpiercer", "SBB 186 – Nightpiercer", R.drawable.sbb_186_nightpiercer),
         LocoIllustrationChoice("rh1293", "Rh 1293", R.drawable.rh1293),
         LocoIllustrationChoice("rh1116", "Rh 1116 – ÖBB", R.drawable.rh1116),
@@ -979,9 +1097,11 @@ private fun locoIllustrationResource(id: String): Int? = when (id) {
     "br147" -> R.drawable.br147
     "br152" -> R.drawable.br152
     "br185" -> R.drawable.br185
+    "br185_lokomotion" -> R.drawable.br185_lokomotion
     "br187" -> R.drawable.br187
     "br193_climate" -> R.drawable.br193_climate
     "br193_backbone" -> R.drawable.br193_backbone
+    "br194" -> R.drawable.br194
     "sbb_186_nightpiercer" -> R.drawable.sbb_186_nightpiercer
     "rh1293" -> R.drawable.rh1293
     "rh1116" -> R.drawable.rh1116
@@ -1476,8 +1596,7 @@ fun DrivingScreen(
                                 value = newNote,
                                 onValueChange = { newNote = it },
                                 label = { Text("Bemerkung") },
-                                minLines = 2,
-                                maxLines = 3,
+                                singleLine = true,
                                 modifier = Modifier.fillMaxWidth()
                             )
                             OutlinedTextField(
@@ -1584,8 +1703,7 @@ fun DrivingScreen(
                                 value = editNote,
                                 onValueChange = { editNote = it },
                                 label = { Text("Bemerkung") },
-                                minLines = 2,
-                                maxLines = 3,
+                                singleLine = true,
                                 modifier = Modifier.fillMaxWidth()
                             )
                             OutlinedTextField(
