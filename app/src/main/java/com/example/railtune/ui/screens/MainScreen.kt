@@ -916,6 +916,7 @@ private fun LocoIllustrationDropdown(
         LocoIllustrationChoice("br110", "BR 110", R.drawable.br110),
         LocoIllustrationChoice("br111", "BR 111", R.drawable.br111),
         LocoIllustrationChoice("br111_ob", "BR 111 – o/b", R.drawable.br111_ob),
+        LocoIllustrationChoice("br112", "BR 112", R.drawable.br112),
         LocoIllustrationChoice("br120", "BR 120", R.drawable.br120),
         LocoIllustrationChoice("br023", "BR 023", R.drawable.br023),
         LocoIllustrationChoice("br139", "BR 139", R.drawable.br139),
@@ -930,6 +931,9 @@ private fun LocoIllustrationDropdown(
         LocoIllustrationChoice("br193_climate", "BR 193 – ClimateHero", R.drawable.br193_climate),
         LocoIllustrationChoice("br193_backbone", "BR 193 – Backbone", R.drawable.br193_backbone),
         LocoIllustrationChoice("br194", "BR 194", R.drawable.br194),
+        LocoIllustrationChoice("br363", "BR 363", R.drawable.br363),
+        LocoIllustrationChoice("re620", "Re 620", R.drawable.re620),
+        LocoIllustrationChoice("re482", "Re 482 – Cargo", R.drawable.re482),
         LocoIllustrationChoice("sbb_186_nightpiercer", "SBB 186 – Nightpiercer", R.drawable.sbb_186_nightpiercer),
         LocoIllustrationChoice("rh1293", "Rh 1293", R.drawable.rh1293),
         LocoIllustrationChoice("rh1116", "Rh 1116 – ÖBB", R.drawable.rh1116),
@@ -1100,6 +1104,7 @@ private fun locoIllustrationResource(id: String): Int? = when (id) {
     "br110" -> R.drawable.br110
     "br111" -> R.drawable.br111
     "br111_ob" -> R.drawable.br111_ob
+    "br112" -> R.drawable.br112
     "br120" -> R.drawable.br120
     "br023" -> R.drawable.br023
     "br139" -> R.drawable.br139
@@ -1114,6 +1119,9 @@ private fun locoIllustrationResource(id: String): Int? = when (id) {
     "br193_climate" -> R.drawable.br193_climate
     "br193_backbone" -> R.drawable.br193_backbone
     "br194" -> R.drawable.br194
+    "br363" -> R.drawable.br363
+    "re620" -> R.drawable.re620
+    "re482" -> R.drawable.re482
     "sbb_186_nightpiercer" -> R.drawable.sbb_186_nightpiercer
     "rh1293" -> R.drawable.rh1293
     "rh1116" -> R.drawable.rh1116
