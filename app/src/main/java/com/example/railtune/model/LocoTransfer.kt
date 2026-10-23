@@ -22,6 +22,7 @@ object LocoTransfer {
                     put("decoderManufacturer", loco.decoderManufacturer)
                     put("illustrationId", loco.illustrationId)
                     put("note", loco.note)
+                    put("railcomMultiplier", loco.railcomMultiplier.toDouble())
                     put("dccFunctions", JSONObject().apply {
                         putNullable("light", loco.dccFunctions.light)
                         putNullable("sound", loco.dccFunctions.sound)
@@ -55,6 +56,7 @@ object LocoTransfer {
                 decoderManufacturer = item.optString("decoderManufacturer"),
                 illustrationId = item.optString("illustrationId"),
                 note = item.optString("note"),
+                railcomMultiplier = item.optDouble("railcomMultiplier", 1.0).toFloat().coerceAtLeast(0f),
                 dccFunctions = DccFunctions(
                     light = functions.intOrNull("light"), sound = functions.intOrNull("sound"),
                     hornHigh = functions.intOrNull("hornHigh"), hornLow = functions.intOrNull("hornLow"),

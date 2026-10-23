@@ -471,7 +471,8 @@ class Z21Manager(private val context: Context) {
         decoderManufacturer: String = "",
         illustrationId: String = "",
         note: String = "",
-        dccFunctions: DccFunctions = DccFunctions()
+        dccFunctions: DccFunctions = DccFunctions(),
+        railcomMultiplier: Float = 1f
     ): Loco {
         val newLoco = Loco(
             id = UUID.randomUUID().toString(),
@@ -481,7 +482,8 @@ class Z21Manager(private val context: Context) {
             decoderManufacturer = decoderManufacturer,
             illustrationId = illustrationId,
             note = note,
-            dccFunctions = dccFunctions
+            dccFunctions = dccFunctions,
+            railcomMultiplier = railcomMultiplier.coerceAtLeast(0f)
         )
         val list = _savedLocos.value.toMutableList()
         list.add(0, newLoco)
@@ -531,7 +533,8 @@ class Z21Manager(private val context: Context) {
                     it.dccFunctions.cabLight,
                     it.dccFunctions.zg12Fst1,
                     it.dccFunctions.zg12Fst2
-                ).joinToString(",") { functionNumber -> functionNumber?.toString().orEmpty() }
+                ).joinToString(",") { functionNumber -> functionNumber?.toString().orEmpty() } +
+                "|${it.railcomMultiplier}"
         }
         prefs.edit().putString(KEY_LOCO_DATA, serialized).apply()
     }
@@ -573,7 +576,8 @@ class Z21Manager(private val context: Context) {
                                 cabLight = dccFunctions.getOrNull(4)?.toIntOrNull(),
                                 zg12Fst1 = dccFunctions.getOrNull(5)?.toIntOrNull(),
                                 zg12Fst2 = dccFunctions.getOrNull(6)?.toIntOrNull()
-                            )
+                            ),
+                            railcomMultiplier = parts.getOrNull(9)?.toFloatOrNull()?.coerceAtLeast(0f) ?: 1f
                         )
                     } else null
                 }

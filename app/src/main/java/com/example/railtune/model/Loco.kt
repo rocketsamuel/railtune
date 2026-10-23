@@ -11,7 +11,8 @@ data class Loco(
     val decoderManufacturer: String = "",
     val illustrationId: String = "",
     val note: String = "",
-    val dccFunctions: DccFunctions = DccFunctions()
+    val dccFunctions: DccFunctions = DccFunctions(),
+    val railcomMultiplier: Float = 1f
 )
 
 data class DccFunctions(

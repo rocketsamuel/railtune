@@ -269,8 +269,8 @@ fun MainScreen(viewModel: BleViewModel) {
                             savedLocos = savedLocos,
                             railComReadings = railComReadings,
                             locoStates = locoStates,
-                            onAddLoco = { name, addr, maxSpd, manufacturer, illustrationId, note, dccFunctions ->
-                                viewModel.addLoco(name, addr, maxSpd, manufacturer, illustrationId, note, dccFunctions)
+                            onAddLoco = { name, addr, maxSpd, manufacturer, illustrationId, note, dccFunctions, railcomMultiplier ->
+                                viewModel.addLoco(name, addr, maxSpd, manufacturer, illustrationId, note, dccFunctions, railcomMultiplier)
                             },
                             onUpdateLoco = { viewModel.updateLoco(it) },
                             onRemoveLoco = { viewModel.removeLoco(it) },
@@ -377,11 +377,15 @@ private fun TabletModeScreen(
                 val locoState = locoStates[loco.address] ?: return@items
                 val maxSpeed = loco.maxSpeedKmH.coerceAtLeast(1).toFloat()
                 val railComReading = railComReadings[loco.address]
+                val usesTargetSpeed = loco.decoderManufacturer.contains("Minitrix", ignoreCase = true)
                 val isDoehlerHaass = loco.decoderManufacturer.equals("Doehler & Haass", ignoreCase = true) ||
                     loco.decoderManufacturer.equals("D&H", ignoreCase = true)
                 val speed = when {
+                    usesTargetSpeed -> maxSpeed * locoState.speedPercent / 100f
                     railComReading == null -> maxSpeed * locoState.speedPercent / 100f
                     isDoehlerHaass -> railComReading.rawSpeed.toFloat()
+                    loco.decoderManufacturer.equals("Custom", ignoreCase = true) ->
+                        railComReading.rawSpeed * loco.railcomMultiplier
                     else -> (railComReading.rawSpeed.coerceIn(0, 255) / 255f) * maxSpeed
                 }
 
@@ -408,6 +412,11 @@ private fun TabletModeScreen(
                             maxSpeed = maxSpeed,
                             unit = "km/h",
                             modifier = Modifier.size(220.dp)
+                        )
+                        Text(
+                            text = "RailCom-Rohwert: ${railComReading?.rawSpeed?.toString() ?: "keine Rückmeldung"}",
+                            style = MaterialTheme.typography.labelLarge,
+                            color = MaterialTheme.colorScheme.onPrimaryContainer
                         )
                     }
                 }
@@ -859,7 +868,7 @@ private fun DecoderManufacturerDropdown(
     onManufacturerSelected: (String) -> Unit
 ) {
     var expanded by remember { mutableStateOf(false) }
-    val manufacturers = listOf("Zimo", "Doehler & Haass", "Minitrix")
+    val manufacturers = listOf("Zimo", "Zimo MS 590N18", "Doehler & Haass", "Minitrix", "Custom")
 
     Box(modifier = Modifier.fillMaxWidth()) {
         OutlinedButton(
@@ -1128,7 +1137,7 @@ fun DrivingScreen(
     savedLocos: List<Loco>,
     railComReadings: Map<Int, RailComReading>,
     locoStates: Map<Int, Z21LocoState>,
-    onAddLoco: (String, Int, Int, String, String, String, DccFunctions) -> Loco,
+    onAddLoco: (String, Int, Int, String, String, String, DccFunctions, Float) -> Loco,
     onUpdateLoco: (Loco) -> Unit,
     onRemoveLoco: (String) -> Unit,
     onSetLocoSpeed: (Int, Float, Boolean) -> Unit,
@@ -1308,16 +1317,20 @@ fun DrivingScreen(
             val displayedTargetSpeedKmH = targetSpeedKmH.coerceIn(0f, maxLocoSpeed)
             val targetSpeedPercent = (displayedTargetSpeedKmH / maxLocoSpeed * 100f)
             val railComReading = railComReadings[loco.address]
+            val usesTargetSpeed = loco.decoderManufacturer.contains("Minitrix", ignoreCase = true)
             val isDoehlerHaass = loco.decoderManufacturer.equals("Doehler & Haass", ignoreCase = true) ||
                     loco.decoderManufacturer.equals("D&H", ignoreCase = true)
             // D&H's RailCom value is calibrated and transmitted in km/h;
             // Zimo reports the 0..255 speed scale used by this app's setup.
             val displaySpeedKmH = when {
+                usesTargetSpeed -> displayedTargetSpeedKmH
                 railComReading == null -> 0f
                 isDoehlerHaass -> railComReading.rawSpeed.toFloat()
+                loco.decoderManufacturer.equals("Custom", ignoreCase = true) ->
+                    railComReading.rawSpeed * loco.railcomMultiplier
                 else -> (railComReading.rawSpeed.coerceIn(0, 255) / 255f) * maxLocoSpeed
             }
-            val hasRailComSpeed = railComReading != null
+            val hasRailComSpeed = railComReading != null && !usesTargetSpeed
 
             item {
                 Card(
@@ -1381,7 +1394,11 @@ fun DrivingScreen(
                                     )
                                     Spacer(modifier = Modifier.width(4.dp))
                                     Text(
-                                        text = if (hasRailComSpeed) "RailCom Ist-Speed" else "Warte auf RailCom",
+                                        text = when {
+                                            usesTargetSpeed -> "Soll-Geschwindigkeit"
+                                            hasRailComSpeed -> "RailCom Ist-Speed"
+                                            else -> "Warte auf RailCom"
+                                        },
                                         style = MaterialTheme.typography.labelSmall,
                                         fontWeight = FontWeight.Bold,
                                         color = MaterialTheme.colorScheme.onPrimaryContainer
@@ -1595,6 +1612,7 @@ fun DrivingScreen(
         var newAddr by remember { mutableStateOf("3") }
         var newMaxSpd by remember { mutableStateOf("160") }
         var newDecoderManufacturer by remember { mutableStateOf("") }
+        var newRailcomMultiplier by remember { mutableStateOf("1.0") }
         var newIllustrationId by remember { mutableStateOf("") }
         var newNote by remember { mutableStateOf("") }
         var newDccFunctionInputs by remember { mutableStateOf(DccFunctionInputs()) }
@@ -1652,6 +1670,16 @@ fun DrivingScreen(
                                 selectedManufacturer = newDecoderManufacturer,
                                 onManufacturerSelected = { newDecoderManufacturer = it }
                             )
+                            if (newDecoderManufacturer.equals("Custom", ignoreCase = true)) {
+                                OutlinedTextField(
+                                    value = newRailcomMultiplier,
+                                    onValueChange = { newRailcomMultiplier = it },
+                                    label = { Text("Railcom Multiplikator") },
+                                    singleLine = true,
+                                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                                    modifier = Modifier.fillMaxWidth()
+                                )
+                            }
                             LocoIllustrationDropdown(
                                 selectedIllustrationId = newIllustrationId,
                                 onIllustrationSelected = { newIllustrationId = it }
@@ -1672,7 +1700,9 @@ fun DrivingScreen(
                             Text("Abbrechen")
                         }
                         Button(
-                            enabled = newDecoderManufacturer.isNotBlank() && newDccFunctionInputs.isValid(),
+                            enabled = newDecoderManufacturer.isNotBlank() && newDccFunctionInputs.isValid() &&
+                                (!newDecoderManufacturer.equals("Custom", ignoreCase = true) ||
+                                    (newRailcomMultiplier.replace(',', '.').toFloatOrNull()?.let { it >= 0f } == true)),
                             onClick = {
                                 val addr = newAddr.toIntOrNull() ?: 3
                                 val spd = newMaxSpd.toIntOrNull() ?: 160
@@ -1683,7 +1713,9 @@ fun DrivingScreen(
                                     newDecoderManufacturer,
                                     newIllustrationId,
                                     newNote,
-                                    newDccFunctionInputs.toDccFunctions()
+                                    newDccFunctionInputs.toDccFunctions(),
+                                    if (newDecoderManufacturer.equals("Custom", ignoreCase = true))
+                                        newRailcomMultiplier.replace(',', '.').toFloat() else 1f
                                 )
                                 showAddLocoDialog = false
                             }
@@ -1702,6 +1734,7 @@ fun DrivingScreen(
         var editAddress by remember(loco.id) { mutableStateOf(loco.address.toString()) }
         var editMaxSpeed by remember(loco.id) { mutableStateOf(loco.maxSpeedKmH.toString()) }
         var editDecoderManufacturer by remember(loco.id) { mutableStateOf(loco.decoderManufacturer) }
+        var editRailcomMultiplier by remember(loco.id) { mutableStateOf(loco.railcomMultiplier.toString()) }
         var editIllustrationId by remember(loco.id) { mutableStateOf(loco.illustrationId) }
         var editNote by remember(loco.id) { mutableStateOf(loco.note) }
         var editDccFunctionInputs by remember(loco.id) { mutableStateOf(loco.dccFunctions.toInputs()) }
@@ -1759,6 +1792,16 @@ fun DrivingScreen(
                                 selectedManufacturer = editDecoderManufacturer,
                                 onManufacturerSelected = { editDecoderManufacturer = it }
                             )
+                            if (editDecoderManufacturer.equals("Custom", ignoreCase = true)) {
+                                OutlinedTextField(
+                                    value = editRailcomMultiplier,
+                                    onValueChange = { editRailcomMultiplier = it },
+                                    label = { Text("Railcom Multiplikator") },
+                                    singleLine = true,
+                                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                                    modifier = Modifier.fillMaxWidth()
+                                )
+                            }
                             LocoIllustrationDropdown(
                                 selectedIllustrationId = editIllustrationId,
                                 onIllustrationSelected = { editIllustrationId = it }
@@ -1795,7 +1838,9 @@ fun DrivingScreen(
                         Button(
                             enabled = (editAddress.toIntOrNull()?.let { it in 1..9999 } == true) &&
                                 (editMaxSpeed.toIntOrNull() ?: 0) > 0 &&
-                                editDecoderManufacturer.isNotBlank() && editDccFunctionInputs.isValid(),
+                                editDecoderManufacturer.isNotBlank() && editDccFunctionInputs.isValid() &&
+                                (!editDecoderManufacturer.equals("Custom", ignoreCase = true) ||
+                                    (editRailcomMultiplier.replace(',', '.').toFloatOrNull()?.let { it >= 0f } == true)),
                             onClick = {
                                 onUpdateLoco(
                                     loco.copy(
@@ -1803,6 +1848,8 @@ fun DrivingScreen(
                                         address = editAddress.toInt(),
                                         maxSpeedKmH = editMaxSpeed.toInt(),
                                         decoderManufacturer = editDecoderManufacturer,
+                                        railcomMultiplier = if (editDecoderManufacturer.equals("Custom", ignoreCase = true))
+                                            editRailcomMultiplier.replace(',', '.').toFloat() else 1f,
                                         illustrationId = editIllustrationId,
                                         note = editNote,
                                         dccFunctions = editDccFunctionInputs.toDccFunctions()
