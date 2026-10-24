@@ -30,6 +30,7 @@ import androidx.compose.material3.*
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.PressInteraction
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -111,6 +112,13 @@ fun MainScreen(viewModel: BleViewModel) {
     val locoStates by viewModel.locoStates.collectAsState()
 
     var selectedTabIndex by remember { mutableIntStateOf(0) }
+    var selectedMeasurementLocoId by rememberSaveable { mutableStateOf("") }
+
+    LaunchedEffect(savedLocos) {
+        if (savedLocos.none { it.id == selectedMeasurementLocoId }) {
+            selectedMeasurementLocoId = savedLocos.firstOrNull()?.id.orEmpty()
+        }
+    }
 
     LaunchedEffect(isWideDisplay) {
         if (!isWideDisplay && selectedTabIndex == 3) {
@@ -283,6 +291,8 @@ fun MainScreen(viewModel: BleViewModel) {
                     1 -> {
                         // Reiter 2: Geschwindigkeit messen
                         SpeedMeasurementScreen(
+                            selectedLocoId = selectedMeasurementLocoId,
+                            onSelectedLocoChange = { selectedMeasurementLocoId = it },
                             savedLocos = savedLocos,
                             railComReadings = railComReadings,
                             connectionState = connectionState,
@@ -569,6 +579,8 @@ fun CircularSpeedometerGauge(
 
 @Composable
 fun SpeedMeasurementScreen(
+    selectedLocoId: String,
+    onSelectedLocoChange: (String) -> Unit,
     savedLocos: List<Loco>,
     railComReadings: Map<Int, RailComReading>,
     connectionState: ConnectionState,
@@ -618,6 +630,8 @@ fun SpeedMeasurementScreen(
             is ConnectionState.Connected -> {
                 LiveDashboardView(
                     deviceName = state.deviceName,
+                    selectedLocoId = selectedLocoId,
+                    onSelectedLocoChange = onSelectedLocoChange,
                     savedLocos = savedLocos,
                     railComReadings = railComReadings,
                     latestPacket = liveDataPacket,
@@ -2168,6 +2182,8 @@ private fun ComparisonSpeedRow(label: String, speed: Float, maxSpeed: Float, col
 @Composable
 fun LiveDashboardView(
     deviceName: String,
+    selectedLocoId: String,
+    onSelectedLocoChange: (String) -> Unit,
     savedLocos: List<Loco>,
     railComReadings: Map<Int, RailComReading>,
     latestPacket: LiveDataPacket?,
@@ -2181,13 +2197,6 @@ fun LiveDashboardView(
     var showGattDialog by remember { mutableStateOf(false) }
     var showHexView by remember { mutableStateOf(false) }
     var locoMenuExpanded by remember { mutableStateOf(false) }
-    var selectedLocoId by remember { mutableStateOf("") }
-
-    LaunchedEffect(savedLocos) {
-        if (savedLocos.none { it.id == selectedLocoId }) {
-            selectedLocoId = savedLocos.firstOrNull()?.id.orEmpty()
-        }
-    }
 
     val liveSpeedKmH = parseSpeedFromText(latestPacket?.textValue) ?: 0f
     val selectedLoco = savedLocos.firstOrNull { it.id == selectedLocoId }
@@ -2281,7 +2290,7 @@ fun LiveDashboardView(
                                 DropdownMenuItem(
                                     text = { Text(loco.name) },
                                     onClick = {
-                                        selectedLocoId = loco.id
+                                        onSelectedLocoChange(loco.id)
                                         locoMenuExpanded = false
                                     }
                                 )

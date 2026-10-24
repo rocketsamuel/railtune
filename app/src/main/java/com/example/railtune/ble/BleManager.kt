@@ -189,6 +189,7 @@ class BleManager(private val context: Context) {
         disconnectInternal()
         activeDeviceName = bleDevice.name
         _connectionState.value = ConnectionState.Connecting(bleDevice.name)
+        Log.i(TAG, "GATT_CONNECT request name=${bleDevice.name} address=${bleDevice.address} elapsedMs=${SystemClock.elapsedRealtime()}")
 
         try {
             activeGatt = bleDevice.device.connectGatt(
@@ -212,6 +213,7 @@ class BleManager(private val context: Context) {
         val gatt = activeGatt
         activeGatt = null
         if (gatt != null) {
+            Log.w(TAG, "GATT_DISCONNECT_REQUEST name=${activeDeviceName ?: gatt.device.name} address=${gatt.device.address} manual=$isManualDisconnect elapsedMs=${SystemClock.elapsedRealtime()}")
             try {
                 gatt.disconnect()
             } catch (e: Exception) {
@@ -259,6 +261,11 @@ class BleManager(private val context: Context) {
         override fun onConnectionStateChange(gatt: BluetoothGatt?, status: Int, newState: Int) {
             if (gatt == null) return
             val deviceName = deviceNameFor(gatt)
+            Log.w(
+                TAG,
+                "GATT_STATE name=$deviceName address=${gatt.device.address} status=$status newState=$newState " +
+                    "active=${gatt === activeGatt} manual=$isManualDisconnect elapsedMs=${SystemClock.elapsedRealtime()}"
+            )
             if (gatt !== activeGatt) {
                 Log.d(TAG, "Verspäteter GATT-Callback für alte Verbindung $deviceName wird ignoriert")
                 try {
@@ -272,11 +279,9 @@ class BleManager(private val context: Context) {
 
             if (newState == BluetoothProfile.STATE_CONNECTED && status == BluetoothGatt.GATT_SUCCESS) {
                 if (gatt === activeGatt) {
-                    Log.d(TAG, "GATT Verbunden mit $deviceName. Fordere hohe Verbindungspriorität & MTU an...")
+                    Log.d(TAG, "GATT Verbunden mit $deviceName. Nutze Standard-Verbindungspriorität und fordere MTU an...")
                     saveLastConnectedDevice(gatt.device.address, deviceName)
                     _connectionState.value = ConnectionState.Connecting("$deviceName (Dienste werden gelesen)")
-
-                    gatt.requestConnectionPriority(BluetoothGatt.CONNECTION_PRIORITY_HIGH)
 
                     val mtuRequested = gatt.requestMtu(512)
                     if (!mtuRequested) {
