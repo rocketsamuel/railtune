@@ -283,6 +283,8 @@ fun MainScreen(viewModel: BleViewModel) {
                     1 -> {
                         // Reiter 2: Geschwindigkeit messen
                         SpeedMeasurementScreen(
+                            savedLocos = savedLocos,
+                            railComReadings = railComReadings,
                             connectionState = connectionState,
                             isScanning = isScanning,
                             lastConnectedName = lastConnectedName,
@@ -567,6 +569,8 @@ fun CircularSpeedometerGauge(
 
 @Composable
 fun SpeedMeasurementScreen(
+    savedLocos: List<Loco>,
+    railComReadings: Map<Int, RailComReading>,
     connectionState: ConnectionState,
     isScanning: Boolean,
     lastConnectedName: String?,
@@ -614,6 +618,8 @@ fun SpeedMeasurementScreen(
             is ConnectionState.Connected -> {
                 LiveDashboardView(
                     deviceName = state.deviceName,
+                    savedLocos = savedLocos,
+                    railComReadings = railComReadings,
                     latestPacket = liveDataPacket,
                     history = dataHistory,
                     activeCharacteristic = activeCharacteristic,
@@ -2133,8 +2139,37 @@ fun DeviceItemCard(
 }
 
 @Composable
+private fun ComparisonSpeedRow(label: String, speed: Float, maxSpeed: Float, color: Color) {
+    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+            Text(label, style = MaterialTheme.typography.bodyMedium)
+            Text("${"%.1f".format(Locale.getDefault(), speed)} km/h", fontWeight = FontWeight.Bold)
+        }
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(8.dp)
+                .clip(RoundedCornerShape(4.dp))
+                .background(MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.12f))
+        ) {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth((speed / maxSpeed).coerceIn(0f, 1f))
+                    .fillMaxHeight()
+                    .background(color)
+            )
+        }
+    }
+}
+
+@Composable
 fun LiveDashboardView(
     deviceName: String,
+    savedLocos: List<Loco>,
+    railComReadings: Map<Int, RailComReading>,
     latestPacket: LiveDataPacket?,
     history: List<LiveDataPacket>,
     activeCharacteristic: DiscoveredGattCharacteristic?,
@@ -2145,8 +2180,30 @@ fun LiveDashboardView(
 ) {
     var showGattDialog by remember { mutableStateOf(false) }
     var showHexView by remember { mutableStateOf(false) }
+    var locoMenuExpanded by remember { mutableStateOf(false) }
+    var selectedLocoId by remember { mutableStateOf("") }
+
+    LaunchedEffect(savedLocos) {
+        if (savedLocos.none { it.id == selectedLocoId }) {
+            selectedLocoId = savedLocos.firstOrNull()?.id.orEmpty()
+        }
+    }
 
     val liveSpeedKmH = parseSpeedFromText(latestPacket?.textValue) ?: 0f
+    val selectedLoco = savedLocos.firstOrNull { it.id == selectedLocoId }
+    val selectedRailCom = selectedLoco?.let { railComReadings[it.address] }
+    val railComSpeedKmH = selectedLoco?.let { loco ->
+        val isMinitrix = loco.decoderManufacturer.contains("Minitrix", ignoreCase = true)
+        val isDoehlerHaass = loco.decoderManufacturer.equals("Doehler & Haass", ignoreCase = true) ||
+            loco.decoderManufacturer.equals("D&H", ignoreCase = true)
+        when {
+            isMinitrix || selectedRailCom == null -> null
+            isDoehlerHaass -> selectedRailCom.rawSpeed.toFloat()
+            loco.decoderManufacturer.equals("Custom", ignoreCase = true) ->
+                selectedRailCom.rawSpeed * loco.railcomMultiplier
+            else -> (selectedRailCom.rawSpeed.coerceIn(0, 255) / 255f) * loco.maxSpeedKmH.coerceAtLeast(1)
+        }
+    }
 
     Column(
         modifier = Modifier.fillMaxSize(),
@@ -2200,6 +2257,63 @@ fun LiveDashboardView(
                     unit = "km/h",
                     modifier = Modifier.size(210.dp)
                 )
+
+                HorizontalDivider(color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.15f))
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text("Lok für RailCom-Vergleich", style = MaterialTheme.typography.labelLarge)
+                    Box {
+                        OutlinedButton(
+                            onClick = { locoMenuExpanded = true },
+                            enabled = savedLocos.isNotEmpty()
+                        ) {
+                            Text(selectedLoco?.name ?: "Lok auswählen")
+                            Icon(Icons.Default.ArrowDropDown, contentDescription = null)
+                        }
+                        DropdownMenu(
+                            expanded = locoMenuExpanded,
+                            onDismissRequest = { locoMenuExpanded = false }
+                        ) {
+                            savedLocos.forEach { loco ->
+                                DropdownMenuItem(
+                                    text = { Text(loco.name) },
+                                    onClick = {
+                                        selectedLocoId = loco.id
+                                        locoMenuExpanded = false
+                                    }
+                                )
+                            }
+                        }
+                    }
+                }
+                if (selectedLoco != null) {
+                    val comparisonMax = maxOf(
+                        selectedLoco.maxSpeedKmH.coerceAtLeast(1).toFloat(),
+                        liveSpeedKmH,
+                        railComSpeedKmH ?: 0f
+                    )
+                    ComparisonSpeedRow("Messwagen", liveSpeedKmH, comparisonMax, MaterialTheme.colorScheme.primary)
+                    if (railComSpeedKmH != null) {
+                        ComparisonSpeedRow("RailCom · ${selectedLoco.name}", railComSpeedKmH, comparisonMax, Color(0xFFFF9800))
+                        val difference = liveSpeedKmH - railComSpeedKmH
+                        Text(
+                            text = "Abweichung Messwagen − RailCom: ${if (difference > 0) "+" else ""}${"%.1f".format(Locale.getDefault(), difference)} km/h",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.75f)
+                        )
+                    } else {
+                        Text(
+                            text = if (selectedLoco.decoderManufacturer.contains("Minitrix", ignoreCase = true))
+                                "Für diesen Minitrix-Decoder liegt keine RailCom-Geschwindigkeit vor."
+                            else "Noch keine RailCom-Daten für Adresse ${selectedLoco.address}.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.75f)
+                        )
+                    }
+                }
 
                 latestPacket?.let {
                     val sdf = remember { SimpleDateFormat("HH:mm:ss.SSS", Locale.getDefault()) }

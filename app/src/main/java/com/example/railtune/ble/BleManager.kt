@@ -602,13 +602,6 @@ class BleManager(private val context: Context) {
         if (bytes.isEmpty()) return
         val textValue = bytes.toString(Charsets.UTF_8).trim()
 
-        // 0.00 / 0.0 / 0 / 0,00 Werte im Stream filtern/ignorieren
-        val numValue = textValue.replace(',', '.').toDoubleOrNull()
-        if (numValue != null && numValue == 0.0) {
-            Log.d(TAG, "Livedaten-Wert '$textValue' ist 0 -> wird ignoriert")
-            return
-        }
-
         val hexValue = bytes.joinToString(" ") { "%02X".format(it) }
         val charUuid = characteristic?.uuid?.toString() ?: _activeCharacteristic.value?.uuid?.toString() ?: ""
 

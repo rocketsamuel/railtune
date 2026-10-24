@@ -28,6 +28,7 @@ class Z21Manager(private val context: Context) {
         private const val PREFS_NAME = "railtune_z21_prefs"
         private const val KEY_LOCO_DATA = "saved_locos_data"
         private const val KEY_Z21_IP = "z21_ip_address"
+        private const val RAILCOM_ZERO_DEBOUNCE_MS = 2_000L
     }
 
     private val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
@@ -203,12 +204,18 @@ class Z21Manager(private val context: Context) {
                 lastRailComMaximumAt[locoAddr] = now
                 pendingRailComZeroJobs.remove(locoAddr)?.cancel()
             } else if (reading.rawSpeed == 0) {
+                val commandedSpeedPercent = _locoStates.value[locoAddr]?.speedPercent ?: 0f
+                if (commandedSpeedPercent >= 99f && _railComReadings.value[locoAddr]?.rawSpeed == 255) {
+                    pendingRailComZeroJobs.remove(locoAddr)?.cancel()
+                    Log.d(TAG, "RailCom Lok $locoAddr: zero ignored at full throttle after maximum reading")
+                    return
+                }
                 val lastMaximumAt = lastRailComMaximumAt[locoAddr]
-                if (lastMaximumAt != null && now - lastMaximumAt < 500L) {
+                if (lastMaximumAt != null && now - lastMaximumAt < RAILCOM_ZERO_DEBOUNCE_MS) {
                     Log.d(TAG, "RailCom Lok $locoAddr: transient zero after maximum ignored")
                     pendingRailComZeroJobs.remove(locoAddr)?.cancel()
                     pendingRailComZeroJobs[locoAddr] = scope.launch {
-                        delay(500L - (now - lastMaximumAt))
+                        delay(RAILCOM_ZERO_DEBOUNCE_MS - (now - lastMaximumAt))
                         if (lastRailComMaximumAt[locoAddr] == lastMaximumAt &&
                             _railComReadings.value[locoAddr]?.rawSpeed == 255
                         ) {
