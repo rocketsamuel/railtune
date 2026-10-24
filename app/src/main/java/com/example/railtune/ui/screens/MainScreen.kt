@@ -89,14 +89,14 @@ private fun parseRevolutionsFromText(text: String?): Float? {
     return text.split(',').getOrNull(1)?.trim()?.replace(',', '.')?.toFloatOrNull()
 }
 
-private data class BatteryReading(val voltageV: Float, val estimatedPercent: Int)
+private data class BatteryReading(val estimatedPercent: Int)
 
 private fun parseBatteryReading(text: String?): BatteryReading? {
     val fields = text?.split(',') ?: return null
     val millivolts = fields.getOrNull(2)?.toFloatOrNull() ?: return null
     val percent = fields.getOrNull(3)?.toIntOrNull() ?: return null
     if (millivolts <= 0f) return null
-    return BatteryReading(millivolts / 1000f, percent.coerceIn(0, 100))
+    return BatteryReading(percent.coerceIn(0, 100))
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -633,7 +633,6 @@ fun SpeedMeasurementScreen(
         when (val state = connectionState) {
             is ConnectionState.Connected -> {
                 LiveDashboardView(
-                    deviceName = state.deviceName,
                     selectedLocoId = selectedLocoId,
                     onSelectedLocoChange = onSelectedLocoChange,
                     savedLocos = savedLocos,
@@ -2181,7 +2180,6 @@ private fun ComparisonSpeedRow(label: String, speed: Float, maxSpeed: Float, col
 
 @Composable
 fun LiveDashboardView(
-    deviceName: String,
     selectedLocoId: String,
     onSelectedLocoChange: (String) -> Unit,
     savedLocos: List<Loco>,
@@ -2228,13 +2226,51 @@ fun LiveDashboardView(
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                Text(
-                    text = "LIVEDATEN ($deviceName)",
+                Row(
                     modifier = Modifier.fillMaxWidth(),
-                    style = MaterialTheme.typography.labelMedium,
-                    color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.7f),
-                    letterSpacing = 1.5.sp
-                )
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "LIVEDATEN",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.7f),
+                        letterSpacing = 1.5.sp
+                    )
+                    batteryReading?.let { battery ->
+                        val batteryIconColor = MaterialTheme.colorScheme.onPrimaryContainer
+                        val crossedBatteryColor = MaterialTheme.colorScheme.error
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(4.dp)
+                        ) {
+                            Box(contentAlignment = Alignment.Center) {
+                                Icon(
+                                    imageVector = if (battery.estimatedPercent == 0) Icons.Default.Battery0Bar else Icons.Default.BatteryFull,
+                                    contentDescription = if (battery.estimatedPercent == 0) "Akku leer" else "Akku",
+                                    tint = batteryIconColor
+                                )
+                                if (battery.estimatedPercent == 0) {
+                                    Canvas(modifier = Modifier.size(24.dp)) {
+                                        drawLine(
+                                            color = crossedBatteryColor,
+                                            start = Offset(size.width * 0.18f, size.height * 0.82f),
+                                            end = Offset(size.width * 0.82f, size.height * 0.18f),
+                                            strokeWidth = 2.dp.toPx(),
+                                            cap = StrokeCap.Round
+                                        )
+                                    }
+                                }
+                            }
+                            Text(
+                                text = "${battery.estimatedPercent}%",
+                                style = MaterialTheme.typography.labelMedium,
+                                fontWeight = FontWeight.Bold,
+                                color = batteryIconColor
+                            )
+                        }
+                    }
+                }
 
                 HorizontalDivider(color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.15f))
                 Row(
@@ -2310,15 +2346,6 @@ fun LiveDashboardView(
                     fontWeight = FontWeight.Medium,
                     color = MaterialTheme.colorScheme.onPrimaryContainer
                 )
-                batteryReading?.let { battery ->
-                    Text(
-                        text = "Akku (geschätzt): ${battery.estimatedPercent}% · ${"%.2f".format(Locale.getDefault(), battery.voltageV)} V",
-                        style = MaterialTheme.typography.bodyMedium,
-                        fontWeight = FontWeight.Medium,
-                        color = MaterialTheme.colorScheme.onPrimaryContainer
-                    )
-                }
-
                 latestPacket?.let {
                     val sdf = remember { SimpleDateFormat("HH:mm:ss.SSS", Locale.getDefault()) }
                     val formattedTime = sdf.format(Date(it.timestampMs))
@@ -2387,9 +2414,7 @@ fun LiveDashboardView(
                                 val revolutions = parseRevolutionsFromText(packet.textValue)
                                 if (revolutions != null) {
                                     val battery = parseBatteryReading(packet.textValue)
-                                    val batteryText = battery?.let {
-                                        " · Akku ${it.estimatedPercent}% (${"%.2f".format(Locale.getDefault(), it.voltageV)} V)"
-                                    }.orEmpty()
+                                    val batteryText = battery?.let { " · Akku ${it.estimatedPercent}%" }.orEmpty()
                                     "$speedText · ${"%.1f".format(Locale.getDefault(), revolutions)} Umdrehungen/3 s$batteryText"
                                 } else {
                                     speedText
