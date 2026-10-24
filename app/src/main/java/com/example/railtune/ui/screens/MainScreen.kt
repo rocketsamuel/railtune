@@ -84,6 +84,21 @@ fun parseSpeedFromText(text: String?): Float? {
     return match?.value?.toFloatOrNull()
 }
 
+private fun parseRevolutionsFromText(text: String?): Float? {
+    if (text.isNullOrBlank()) return null
+    return text.split(',').getOrNull(1)?.trim()?.replace(',', '.')?.toFloatOrNull()
+}
+
+private data class BatteryReading(val voltageV: Float, val estimatedPercent: Int)
+
+private fun parseBatteryReading(text: String?): BatteryReading? {
+    val fields = text?.split(',') ?: return null
+    val millivolts = fields.getOrNull(2)?.toFloatOrNull() ?: return null
+    val percent = fields.getOrNull(3)?.toIntOrNull() ?: return null
+    if (millivolts <= 0f) return null
+    return BatteryReading(millivolts / 1000f, percent.coerceIn(0, 100))
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun MainScreen(viewModel: BleViewModel) {
@@ -95,9 +110,6 @@ fun MainScreen(viewModel: BleViewModel) {
     val connectionState by viewModel.connectionState.collectAsState()
     val liveDataPacket by viewModel.liveDataStream.collectAsState()
     val dataHistory by viewModel.dataHistory.collectAsState()
-    val discoveredGattServices by viewModel.discoveredGattServices.collectAsState()
-    val activeCharacteristic by viewModel.activeCharacteristic.collectAsState()
-
     val lastConnectedAddress by viewModel.lastConnectedAddress.collectAsState()
     val lastConnectedName by viewModel.lastConnectedName.collectAsState()
     val isAutoConnectEnabled by viewModel.isAutoConnectEnabled.collectAsState()
@@ -303,8 +315,6 @@ fun MainScreen(viewModel: BleViewModel) {
                             discoveredDevices = discoveredDevices,
                             liveDataPacket = liveDataPacket,
                             dataHistory = dataHistory,
-                            activeCharacteristic = activeCharacteristic,
-                            discoveredGattServices = discoveredGattServices,
                             onStartScan = {
                                 if (hasPermissions) viewModel.startScan()
                                 else permissionLauncher.launch(requiredPermissions)
@@ -314,8 +324,6 @@ fun MainScreen(viewModel: BleViewModel) {
                             onToggleAutoConnect = { viewModel.setAutoConnectEnabled(it) },
                             onForgetDevice = { viewModel.forgetLastDevice() },
                             onConnectDevice = { viewModel.connectDevice(it) },
-                            onSelectCharacteristic = { sUuid, cUuid -> viewModel.selectCharacteristic(sUuid, cUuid) },
-                            onSetCustomUuids = { sUuid, cUuid -> viewModel.setCustomUuids(sUuid, cUuid) },
                             onClearHistory = { viewModel.clearDataHistory() }
                         )
                     }
@@ -591,16 +599,12 @@ fun SpeedMeasurementScreen(
     discoveredDevices: List<BleDevice>,
     liveDataPacket: LiveDataPacket?,
     dataHistory: List<LiveDataPacket>,
-    activeCharacteristic: DiscoveredGattCharacteristic?,
-    discoveredGattServices: List<DiscoveredGattService>,
     onStartScan: () -> Unit,
     onStopScan: () -> Unit,
     onDisconnect: () -> Unit,
     onToggleAutoConnect: (Boolean) -> Unit,
     onForgetDevice: () -> Unit,
     onConnectDevice: (BleDevice) -> Unit,
-    onSelectCharacteristic: (UUID, UUID) -> Unit,
-    onSetCustomUuids: (String, String) -> Unit,
     onClearHistory: () -> Unit
 ) {
     Column(
@@ -636,10 +640,6 @@ fun SpeedMeasurementScreen(
                     railComReadings = railComReadings,
                     latestPacket = liveDataPacket,
                     history = dataHistory,
-                    activeCharacteristic = activeCharacteristic,
-                    discoveredGattServices = discoveredGattServices,
-                    onSelectCharacteristic = onSelectCharacteristic,
-                    onSetCustomUuids = onSetCustomUuids,
                     onClearHistory = onClearHistory
                 )
             }
@@ -2188,17 +2188,13 @@ fun LiveDashboardView(
     railComReadings: Map<Int, RailComReading>,
     latestPacket: LiveDataPacket?,
     history: List<LiveDataPacket>,
-    activeCharacteristic: DiscoveredGattCharacteristic?,
-    discoveredGattServices: List<DiscoveredGattService>,
-    onSelectCharacteristic: (UUID, UUID) -> Unit,
-    onSetCustomUuids: (String, String) -> Unit,
     onClearHistory: () -> Unit
 ) {
-    var showGattDialog by remember { mutableStateOf(false) }
-    var showHexView by remember { mutableStateOf(false) }
     var locoMenuExpanded by remember { mutableStateOf(false) }
 
     val liveSpeedKmH = parseSpeedFromText(latestPacket?.textValue) ?: 0f
+    val measuredRevolutions = parseRevolutionsFromText(latestPacket?.textValue)
+    val batteryReading = parseBatteryReading(latestPacket?.textValue)
     val selectedLoco = savedLocos.firstOrNull { it.id == selectedLocoId }
     val selectedRailCom = selectedLoco?.let { railComReadings[it.address] }
     val railComSpeedKmH = selectedLoco?.let { loco ->
@@ -2232,39 +2228,12 @@ fun LiveDashboardView(
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                Row(
+                Text(
+                    text = "LIVEDATEN ($deviceName)",
                     modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text(
-                        text = "LIVEDATEN ($deviceName)",
-                        style = MaterialTheme.typography.labelMedium,
-                        color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.7f),
-                        letterSpacing = 1.5.sp
-                    )
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        IconButton(onClick = { showGattDialog = true }) {
-                            Icon(
-                                imageVector = Icons.Default.Settings,
-                                contentDescription = "Dienste / UUIDs",
-                                tint = MaterialTheme.colorScheme.onPrimaryContainer
-                            )
-                        }
-                        FilterChip(
-                            selected = showHexView,
-                            onClick = { showHexView = !showHexView },
-                            label = { Text(if (showHexView) "HEX" else "Text") }
-                        )
-                    }
-                }
-
-                // Runder Tacho Gauge
-                CircularSpeedometerGauge(
-                    speed = liveSpeedKmH,
-                    maxSpeed = 220f,
-                    unit = "km/h",
-                    modifier = Modifier.size(210.dp)
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.7f),
+                    letterSpacing = 1.5.sp
                 )
 
                 HorizontalDivider(color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.15f))
@@ -2273,7 +2242,7 @@ fun LiveDashboardView(
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Text("Lok für RailCom-Vergleich", style = MaterialTheme.typography.labelLarge)
+                    Text("Triebfahrzeug", style = MaterialTheme.typography.labelLarge)
                     Box {
                         OutlinedButton(
                             onClick = { locoMenuExpanded = true },
@@ -2306,12 +2275,14 @@ fun LiveDashboardView(
                     )
                     ComparisonSpeedRow("Messwagen", liveSpeedKmH, comparisonMax, MaterialTheme.colorScheme.primary)
                     if (railComSpeedKmH != null) {
-                        ComparisonSpeedRow("RailCom · ${selectedLoco.name}", railComSpeedKmH, comparisonMax, Color(0xFFFF9800))
+                        ComparisonSpeedRow("${selectedLoco.name}", railComSpeedKmH, comparisonMax, Color(0xFFFF9800))
                         val difference = liveSpeedKmH - railComSpeedKmH
                         Text(
-                            text = "Abweichung Messwagen − RailCom: ${if (difference > 0) "+" else ""}${"%.1f".format(Locale.getDefault(), difference)} km/h",
-                            style = MaterialTheme.typography.labelMedium,
-                            color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.75f)
+                            text = "Differenz (Messwagen − Lok): ${if (difference > 0) "+" else ""}${"%.1f".format(Locale.getDefault(), difference)} km/h",
+                            style = MaterialTheme.typography.titleSmall,
+                            fontWeight = FontWeight.Bold,
+                            color = if (kotlin.math.abs(difference) < 0.1f) MaterialTheme.colorScheme.primary
+                            else MaterialTheme.colorScheme.onPrimaryContainer
                         )
                     } else {
                         Text(
@@ -2322,6 +2293,30 @@ fun LiveDashboardView(
                             color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.75f)
                         )
                     }
+                } else {
+                    ComparisonSpeedRow("Messwagen", liveSpeedKmH, maxOf(220f, liveSpeedKmH), MaterialTheme.colorScheme.primary)
+                    Text(
+                        "Wähle eine Lok aus, um die zweite Geschwindigkeit zu vergleichen.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.75f)
+                    )
+                }
+
+                Text(
+                    text = measuredRevolutions?.let {
+                        "Umdrehungen (letzte 3 s): ${"%.1f".format(Locale.getDefault(), it)}"
+                    } ?: "Umdrehungen (letzte 3 s): –",
+                    style = MaterialTheme.typography.bodyMedium,
+                    fontWeight = FontWeight.Medium,
+                    color = MaterialTheme.colorScheme.onPrimaryContainer
+                )
+                batteryReading?.let { battery ->
+                    Text(
+                        text = "Akku (geschätzt): ${battery.estimatedPercent}% · ${"%.2f".format(Locale.getDefault(), battery.voltageV)} V",
+                        style = MaterialTheme.typography.bodyMedium,
+                        fontWeight = FontWeight.Medium,
+                        color = MaterialTheme.colorScheme.onPrimaryContainer
+                    )
                 }
 
                 latestPacket?.let {
@@ -2386,10 +2381,19 @@ fun LiveDashboardView(
                             horizontalArrangement = Arrangement.SpaceBetween,
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            val packetDisplayText = if (showHexView) {
-                                packet.hexValue
-                            } else if (parseSpeedFromText(packet.textValue) != null) {
-                                "${packet.textValue} km/h"
+                            val packetDisplayText = if (parseSpeedFromText(packet.textValue) != null) {
+                                val speedValue = requireNotNull(parseSpeedFromText(packet.textValue))
+                                val speedText = "${"%.2f".format(Locale.getDefault(), speedValue)} km/h"
+                                val revolutions = parseRevolutionsFromText(packet.textValue)
+                                if (revolutions != null) {
+                                    val battery = parseBatteryReading(packet.textValue)
+                                    val batteryText = battery?.let {
+                                        " · Akku ${it.estimatedPercent}% (${"%.2f".format(Locale.getDefault(), it.voltageV)} V)"
+                                    }.orEmpty()
+                                    "$speedText · ${"%.1f".format(Locale.getDefault(), revolutions)} Umdrehungen/3 s$batteryText"
+                                } else {
+                                    speedText
+                                }
                             } else {
                                 packet.textValue
                             }
@@ -2412,21 +2416,6 @@ fun LiveDashboardView(
         }
     }
 
-    if (showGattDialog) {
-        GattInspectorDialog(
-            discoveredServices = discoveredGattServices,
-            activeCharacteristic = activeCharacteristic,
-            onSelectCharacteristic = { serviceUuid, charUuid ->
-                onSelectCharacteristic(serviceUuid, charUuid)
-                showGattDialog = false
-            },
-            onSetCustomUuids = { serviceUuidStr, charUuidStr ->
-                onSetCustomUuids(serviceUuidStr, charUuidStr)
-                showGattDialog = false
-            },
-            onDismiss = { showGattDialog = false }
-        )
-    }
 }
 
 @Composable
