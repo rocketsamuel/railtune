@@ -11,10 +11,12 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.gestures.animateScrollBy
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
@@ -1250,12 +1252,31 @@ fun DrivingScreen(
     var editingLoco by remember { mutableStateOf<Loco?>(null) }
 
     val activeLoco = savedLocos.find { it.id == selectedLocoId } ?: savedLocos.firstOrNull()
+    val sortedLocos = remember(savedLocos) { savedLocos.sortedBy { it.name.trim().lowercase(Locale.ROOT) } }
+    val locoSelectorListState = rememberLazyListState()
     var activeDccFunctionNumbers by remember(activeLoco?.id) { mutableStateOf(emptySet<Int>()) }
     val activeZ21State = activeLoco?.let { locoStates[it.address] }
 
     LaunchedEffect(savedLocos) {
         if (savedLocos.isNotEmpty() && savedLocos.none { it.id == selectedLocoId }) {
             selectedLocoId = savedLocos.first().id
+        }
+    }
+
+    LaunchedEffect(activeLoco?.id, sortedLocos) {
+        val selectedIndex = sortedLocos.indexOfFirst { it.id == activeLoco?.id }
+        if (selectedIndex >= 0) {
+            locoSelectorListState.animateScrollToItem(selectedIndex)
+            val selectedItem = locoSelectorListState.layoutInfo.visibleItemsInfo
+                .firstOrNull { it.index == selectedIndex }
+            if (selectedItem != null) {
+                val viewportCenter = (
+                    locoSelectorListState.layoutInfo.viewportStartOffset +
+                        locoSelectorListState.layoutInfo.viewportEndOffset
+                    ) / 2f
+                val itemCenter = selectedItem.offset + selectedItem.size / 2f
+                locoSelectorListState.animateScrollBy(itemCenter - viewportCenter)
+            }
         }
     }
 
@@ -1332,55 +1353,58 @@ fun DrivingScreen(
                         modifier = Modifier.fillMaxWidth(),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Row(
-                            modifier = Modifier
-                                .weight(1f)
-                                .horizontalScroll(rememberScrollState()),
-                            horizontalArrangement = Arrangement.spacedBy(8.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            if (savedLocos.isEmpty()) {
-                                Text("Keine Fahrzeuge angelegt", maxLines = 1)
-                            }
-                            savedLocos.sortedBy { it.name.trim().lowercase(Locale.ROOT) }.forEach { loco ->
-                                val isSelected = loco.id == activeLoco?.id
-                                val illustrationRes = locoIllustrationResource(loco.illustrationId)
-                                FilterChip(
-                                    selected = isSelected,
-                                    onClick = {
-                                        selectedLocoId = loco.id
-                                        targetSpeedKmH = 0f
-                                    },
-                                    label = {
-                                        if (illustrationRes != null) {
-                                            Column(
-                                                modifier = Modifier.padding(vertical = 4.dp),
-                                                horizontalAlignment = Alignment.CenterHorizontally,
-                                                verticalArrangement = Arrangement.spacedBy(2.dp)
-                                            ) {
-                                                Text(text = loco.name, maxLines = 1)
-                                                Image(
-                                                    painter = painterResource(illustrationRes),
-                                                    contentDescription = null,
-                                                    modifier = Modifier.width(64.dp).height(20.dp),
-                                                    contentScale = ContentScale.Fit
-                                                )
-                                            }
-                                        } else {
-                                            Text(
-                                                text = loco.name,
-                                                maxLines = 1,
-                                                modifier = Modifier.padding(vertical = 4.dp)
+                        if (sortedLocos.isEmpty()) {
+                            Text("Keine Fahrzeuge angelegt", maxLines = 1)
+                        } else {
+                            BoxWithConstraints(modifier = Modifier.weight(1f)) {
+                                LazyRow(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    state = locoSelectorListState,
+                                    contentPadding = PaddingValues(horizontal = maxWidth / 2),
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    items(sortedLocos, key = { it.id }) { loco ->
+                                        val isSelected = loco.id == activeLoco?.id
+                                        val illustrationRes = locoIllustrationResource(loco.illustrationId)
+                                        FilterChip(
+                                            selected = isSelected,
+                                            onClick = {
+                                                selectedLocoId = loco.id
+                                                targetSpeedKmH = 0f
+                                            },
+                                            label = {
+                                                if (illustrationRes != null) {
+                                                    Column(
+                                                        modifier = Modifier.padding(vertical = 4.dp),
+                                                        horizontalAlignment = Alignment.CenterHorizontally,
+                                                        verticalArrangement = Arrangement.spacedBy(2.dp)
+                                                    ) {
+                                                        Text(text = loco.name, maxLines = 1)
+                                                        Image(
+                                                            painter = painterResource(illustrationRes),
+                                                            contentDescription = null,
+                                                            modifier = Modifier.width(64.dp).height(20.dp),
+                                                            contentScale = ContentScale.Fit
+                                                        )
+                                                    }
+                                                } else {
+                                                    Text(
+                                                        text = loco.name,
+                                                        maxLines = 1,
+                                                        modifier = Modifier.padding(vertical = 4.dp)
+                                                    )
+                                                }
+                                            },
+                                            colors = FilterChipDefaults.filterChipColors(
+                                                containerColor = MaterialTheme.colorScheme.surfaceVariant,
+                                                labelColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                selectedContainerColor = MaterialTheme.colorScheme.primary,
+                                                selectedLabelColor = MaterialTheme.colorScheme.onPrimary
                                             )
-                                        }
-                                    },
-                                    colors = FilterChipDefaults.filterChipColors(
-                                        containerColor = MaterialTheme.colorScheme.surfaceVariant,
-                                        labelColor = MaterialTheme.colorScheme.onSurfaceVariant,
-                                        selectedContainerColor = MaterialTheme.colorScheme.primary,
-                                        selectedLabelColor = MaterialTheme.colorScheme.onPrimary
-                                    )
-                                )
+                                        )
+                                    }
+                                }
                             }
                         }
                     }
