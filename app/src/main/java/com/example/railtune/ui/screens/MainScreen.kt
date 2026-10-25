@@ -62,9 +62,11 @@ import com.example.railtune.model.DiscoveredGattCharacteristic
 import com.example.railtune.model.DiscoveredGattService
 import com.example.railtune.model.LiveDataPacket
 import com.example.railtune.model.Loco
-import com.example.railtune.model.LocoTransfer
 import com.example.railtune.model.RailComReading
 import com.example.railtune.model.Z21LocoState
+import com.example.railtune.network.IncomingWifiTransfer
+import com.example.railtune.network.LocoWifiTransferManager
+import com.example.railtune.network.WifiTransferDevice
 import com.example.railtune.viewmodel.BleViewModel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collect
@@ -122,6 +124,14 @@ fun MainScreen(viewModel: BleViewModel) {
     val savedLocos by viewModel.savedLocos.collectAsState()
     val railComReadings by viewModel.railComReadings.collectAsState()
     val locoStates by viewModel.locoStates.collectAsState()
+
+    val locoWifiTransferManager = remember(context) { LocoWifiTransferManager(context) }
+    val wifiTransferDevices = locoWifiTransferManager.availableDevices
+    val incomingWifiTransfer = locoWifiTransferManager.incomingTransfer
+    DisposableEffect(locoWifiTransferManager) {
+        locoWifiTransferManager.start()
+        onDispose { locoWifiTransferManager.stop() }
+    }
 
     var selectedTabIndex by remember { mutableIntStateOf(0) }
     var selectedMeasurementLocoId by rememberSaveable { mutableStateOf("") }
@@ -297,7 +307,8 @@ fun MainScreen(viewModel: BleViewModel) {
                             onSetLocoSpeed = { addr, spd, fwd -> viewModel.setLocoSpeed(addr, spd, fwd) },
                             onSetLocoFunction = { addr, func, state -> viewModel.setLocoFunction(addr, func, state) },
                             onGetLocoInfo = { addr -> viewModel.getLocoInfo(addr) },
-                            onImportLocos = { viewModel.importLocos(it) }
+                            wifiTransferDevices = wifiTransferDevices,
+                            onSendLocoExport = locoWifiTransferManager::sendLocos
                         )
                     }
                     1 -> {
@@ -350,8 +361,52 @@ fun MainScreen(viewModel: BleViewModel) {
                 }
             }
         }
+        incomingWifiTransfer?.let { request ->
+            IncomingLocoTransferDialog(
+                request = request,
+                onAccept = {
+                    locoWifiTransferManager.answerIncoming(request.id, true)
+                    viewModel.importLocos(request.locos)
+                    Toast.makeText(
+                        context,
+                        "${request.locos.size} Fahrzeuge von ${request.senderName.removePrefix("RailTune-")} importiert",
+                        Toast.LENGTH_LONG
+                    ).show()
+                },
+                onDecline = { locoWifiTransferManager.answerIncoming(request.id, false) }
+            )
+        }
     }
 
+}
+
+@Composable
+private fun IncomingLocoTransferDialog(
+    request: IncomingWifiTransfer,
+    onAccept: () -> Unit,
+    onDecline: () -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onDecline,
+        title = { Text("Fahrzeugexport empfangen") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("${request.senderName.removePrefix("RailTune-")} möchte ${request.locos.size} Fahrzeuge senden.")
+                request.locos.take(5).forEach { loco ->
+                    Text("• ${loco.name} (DCC ${loco.address})", style = MaterialTheme.typography.bodySmall)
+                }
+                if (request.locos.size > 5) {
+                    Text("und ${request.locos.size - 5} weitere…", style = MaterialTheme.typography.bodySmall)
+                }
+                Text(
+                    "Fahrzeuge mit gleicher DCC-Adresse werden durch den Import ersetzt.",
+                    style = MaterialTheme.typography.bodySmall
+                )
+            }
+        },
+        confirmButton = { Button(onClick = onAccept) { Text("Importieren") } },
+        dismissButton = { TextButton(onClick = onDecline) { Text("Ablehnen") } }
+    )
 }
 
 @Composable
@@ -1170,31 +1225,11 @@ fun DrivingScreen(
     onSetLocoSpeed: (Int, Float, Boolean) -> Unit,
     onSetLocoFunction: (Int, Int, Boolean) -> Unit,
     onGetLocoInfo: (Int) -> Unit,
-    onImportLocos: (List<Loco>) -> Unit
+    wifiTransferDevices: List<WifiTransferDevice>,
+    onSendLocoExport: suspend (WifiTransferDevice, List<Loco>) -> Boolean
 ) {
     val context = LocalContext.current
-    val exportLauncher = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/json")) { uri ->
-        if (uri != null) runCatching {
-            context.contentResolver.openOutputStream(uri)?.bufferedWriter()?.use { it.write(LocoTransfer.encode(savedLocos)) }
-                ?: error("Datei konnte nicht geschrieben werden.")
-        }.onSuccess {
-            Toast.makeText(context, "Fahrzeuge exportiert", Toast.LENGTH_SHORT).show()
-        }.onFailure {
-            Toast.makeText(context, "Export fehlgeschlagen: ${it.localizedMessage}", Toast.LENGTH_LONG).show()
-        }
-    }
-    val importLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
-        if (uri != null) runCatching {
-            val json = context.contentResolver.openInputStream(uri)?.bufferedReader()?.use { it.readText() }
-                ?: error("Datei konnte nicht gelesen werden.")
-            LocoTransfer.decode(json)
-        }.onSuccess { imported ->
-            onImportLocos(imported)
-            Toast.makeText(context, "${imported.size} Fahrzeuge importiert (gleiche DCC-Adressen ersetzt)", Toast.LENGTH_LONG).show()
-        }.onFailure {
-            Toast.makeText(context, "Import fehlgeschlagen: ${it.localizedMessage}", Toast.LENGTH_LONG).show()
-        }
-    }
+    var showWifiExportDialog by remember { mutableStateOf(false) }
     val drivingPreferences = remember(context) {
         context.getSharedPreferences("railtune_preferences", 0)
     }
@@ -1274,11 +1309,8 @@ fun DrivingScreen(
                             color = MaterialTheme.colorScheme.primary
                         )
                         Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                            IconButton(onClick = { exportLauncher.launch("RailTune-Fahrzeuge.json") }, enabled = savedLocos.isNotEmpty()) {
-                                Icon(Icons.Default.FileUpload, contentDescription = "Fahrzeuge exportieren")
-                            }
-                            IconButton(onClick = { importLauncher.launch(arrayOf("application/json", "text/*")) }) {
-                                Icon(Icons.Default.FileDownload, contentDescription = "Fahrzeuge importieren")
+                            IconButton(onClick = { showWifiExportDialog = true }, enabled = savedLocos.isNotEmpty()) {
+                                Icon(Icons.Default.Output, contentDescription = "Export/Teilen")
                             }
                             FilterChip(
                                 selected = false,
@@ -1905,6 +1937,19 @@ fun DrivingScreen(
                 }
             }
         }
+    }
+
+    if (showWifiExportDialog) {
+        WifiLocoTransferDialog(
+            devices = wifiTransferDevices,
+            locos = savedLocos,
+            onSend = onSendLocoExport,
+            onTransferAccepted = { deviceName ->
+                Toast.makeText(context, "Fahrzeuge an $deviceName gesendet", Toast.LENGTH_LONG).show()
+                showWifiExportDialog = false
+            },
+            onDismiss = { showWifiExportDialog = false }
+        )
     }
 }
 
