@@ -1195,7 +1195,15 @@ fun DrivingScreen(
             Toast.makeText(context, "Import fehlgeschlagen: ${it.localizedMessage}", Toast.LENGTH_LONG).show()
         }
     }
-    var selectedLocoId by remember { mutableStateOf(savedLocos.firstOrNull()?.id ?: "") }
+    val drivingPreferences = remember(context) {
+        context.getSharedPreferences("railtune_preferences", 0)
+    }
+    var selectedLocoId by remember {
+        mutableStateOf(
+            drivingPreferences.getString("selected_driving_loco_id", null)
+                ?: savedLocos.firstOrNull()?.id.orEmpty()
+        )
+    }
     var targetSpeedKmH by remember { mutableFloatStateOf(0f) }
     var isForwardDirection by remember { mutableStateOf(true) }
 
@@ -1207,9 +1215,15 @@ fun DrivingScreen(
     val activeZ21State = activeLoco?.let { locoStates[it.address] }
 
     LaunchedEffect(savedLocos) {
-        if (selectedLocoId.isEmpty() && savedLocos.isNotEmpty()) {
+        if (savedLocos.isNotEmpty() && savedLocos.none { it.id == selectedLocoId }) {
             selectedLocoId = savedLocos.first().id
         }
+    }
+
+    LaunchedEffect(selectedLocoId) {
+        drivingPreferences.edit()
+            .putString("selected_driving_loco_id", selectedLocoId)
+            .apply()
     }
 
     LaunchedEffect(activeLoco?.id, activeZ21State) {
@@ -2340,8 +2354,8 @@ fun LiveDashboardView(
 
                 Text(
                     text = measuredRevolutions?.let {
-                        "Umdrehungen (letzte 3 s): ${"%.1f".format(Locale.getDefault(), it)}"
-                    } ?: "Umdrehungen (letzte 3 s): –",
+                        "Umdrehungen (letzte 3s): ${"%.1f".format(Locale.getDefault(), it)}"
+                    } ?: "Umdrehungen (letzte 3ss): –",
                     style = MaterialTheme.typography.bodyMedium,
                     fontWeight = FontWeight.Medium,
                     color = MaterialTheme.colorScheme.onPrimaryContainer
@@ -2401,21 +2415,24 @@ fun LiveDashboardView(
                             containerColor = MaterialTheme.colorScheme.surfaceVariant
                         )
                     ) {
-                        Row(
+                        Column(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .padding(12.dp),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
+                            horizontalAlignment = Alignment.End,
+                            verticalArrangement = Arrangement.spacedBy(4.dp)
                         ) {
+                            Text(
+                                text = sdf.format(Date(packet.timestampMs)),
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
                             val packetDisplayText = if (parseSpeedFromText(packet.textValue) != null) {
                                 val speedValue = requireNotNull(parseSpeedFromText(packet.textValue))
-                                val speedText = "${"%.2f".format(Locale.getDefault(), speedValue)} km/h"
+                                val speedText = "${"%.1f".format(Locale.getDefault(), speedValue)} km/h"
                                 val revolutions = parseRevolutionsFromText(packet.textValue)
                                 if (revolutions != null) {
-                                    val battery = parseBatteryReading(packet.textValue)
-                                    val batteryText = battery?.let { " · Akku ${it.estimatedPercent}%" }.orEmpty()
-                                    "$speedText · ${"%.1f".format(Locale.getDefault(), revolutions)} Umdrehungen/3 s$batteryText"
+                                    "$speedText · ${"%.1f".format(Locale.getDefault(), revolutions/3)} Umdrehungen/s"
                                 } else {
                                     speedText
                                 }
@@ -2424,15 +2441,11 @@ fun LiveDashboardView(
                             }
                             Text(
                                 text = packetDisplayText,
-                                style = MaterialTheme.typography.bodyLarge,
+                                style = MaterialTheme.typography.bodyMedium,
                                 fontWeight = FontWeight.SemiBold,
                                 fontFamily = FontFamily.Monospace,
-                                modifier = Modifier.weight(1f)
-                            )
-                            Text(
-                                text = sdf.format(Date(packet.timestampMs)),
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                                modifier = Modifier.fillMaxWidth(),
+                                maxLines = 1
                             )
                         }
                     }
