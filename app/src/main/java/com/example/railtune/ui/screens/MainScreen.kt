@@ -37,6 +37,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -468,7 +469,11 @@ private fun TabletModeScreen(
                 Card(
                     modifier = Modifier.fillMaxWidth(),
                     colors = CardDefaults.cardColors(
-                        containerColor = MaterialTheme.colorScheme.primaryContainer
+                        containerColor = lerp(
+                            MaterialTheme.colorScheme.primaryContainer,
+                            MaterialTheme.colorScheme.surface,
+                            0.08f
+                        )
                     )
                 ) {
                     Column(
@@ -607,7 +612,7 @@ fun CircularSpeedometerGauge(
                 color = Color(0xFFD32F2F),
                 start = needleStart,
                 end = needleEnd,
-                strokeWidth = 2.5.dp.toPx(),
+                strokeWidth = 4.dp.toPx(),
                 cap = StrokeCap.Round
             )
         }
@@ -1402,7 +1407,11 @@ fun DrivingScreen(
                 Card(
                     modifier = Modifier.fillMaxWidth(),
                     colors = CardDefaults.cardColors(
-                        containerColor = MaterialTheme.colorScheme.primaryContainer
+                        containerColor = lerp(
+                            MaterialTheme.colorScheme.primaryContainer,
+                            MaterialTheme.colorScheme.surface,
+                            0.08f
+                        )
                     )
                 ) {
                     Column(
@@ -1518,6 +1527,13 @@ fun DrivingScreen(
                                             onSetLocoSpeed(loco.address, speedPercent, isForwardDirection)
                                         },
                                         valueRange = 0f..maxLocoSpeed,
+                                        colors = SliderDefaults.colors(
+                                            thumbColor = MaterialTheme.colorScheme.primary,
+                                            activeTrackColor = MaterialTheme.colorScheme.primary,
+                                            inactiveTrackColor = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.55f),
+                                            activeTickColor = MaterialTheme.colorScheme.primary,
+                                            inactiveTickColor = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.55f)
+                                        ),
                                         modifier = Modifier
                                             .requiredWidth(150.dp)
                                             .graphicsLayer {
