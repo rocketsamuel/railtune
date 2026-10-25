@@ -996,12 +996,15 @@ private fun LocoIllustrationDropdown(
         LocoIllustrationChoice("br141", "BR 141", R.drawable.br141),
         LocoIllustrationChoice("br146", "BR 146", R.drawable.br146),
         LocoIllustrationChoice("br147", "BR 147", R.drawable.br147),
+        LocoIllustrationChoice("br151", "BR 151", R.drawable.br151),
         LocoIllustrationChoice("br152", "BR 152", R.drawable.br152),
+        LocoIllustrationChoice("br159_verkehrsrot", "BR 159 – Verkehrsrot", R.drawable.br159_verkehrsrot),
         LocoIllustrationChoice("br185", "BR 185", R.drawable.br185),
         LocoIllustrationChoice("br185_lokomotion", "BR 185 – Lokomotion", R.drawable.br185_lokomotion),
         LocoIllustrationChoice("br187", "BR 187", R.drawable.br187),
         LocoIllustrationChoice("br193_climate", "BR 193 – ClimateHero", R.drawable.br193_climate),
         LocoIllustrationChoice("br193_backbone", "BR 193 – Backbone", R.drawable.br193_backbone),
+        LocoIllustrationChoice("br193_lokomotion", "BR 193 – Lokomotion", R.drawable.br193_lokomotion),
         LocoIllustrationChoice("br194", "BR 194", R.drawable.br194),
         LocoIllustrationChoice("br363", "BR 363", R.drawable.br363),
         LocoIllustrationChoice("re620", "Re 620", R.drawable.re620),
@@ -1184,12 +1187,15 @@ private fun locoIllustrationResource(id: String): Int? = when (id) {
     "br141" -> R.drawable.br141
     "br146" -> R.drawable.br146
     "br147" -> R.drawable.br147
+    "br151" -> R.drawable.br151
     "br152" -> R.drawable.br152
+    "br159_verkehrsrot" -> R.drawable.br159_verkehrsrot
     "br185" -> R.drawable.br185
     "br185_lokomotion" -> R.drawable.br185_lokomotion
     "br187" -> R.drawable.br187
     "br193_climate" -> R.drawable.br193_climate
     "br193_backbone" -> R.drawable.br193_backbone
+    "br193_lokomotion" -> R.drawable.br193_lokomotion
     "br194" -> R.drawable.br194
     "br363" -> R.drawable.br363
     "re620" -> R.drawable.re620
