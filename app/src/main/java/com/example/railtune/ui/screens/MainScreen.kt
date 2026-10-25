@@ -987,6 +987,7 @@ private fun LocoIllustrationDropdown(
         LocoIllustrationChoice("br101", "BR 101", R.drawable.br101),
         LocoIllustrationChoice("br101_50jahre", "BR 101 – 50 Jahre", R.drawable.br101_50jahre),
         LocoIllustrationChoice("br103", "BR 103", R.drawable.br103),
+        LocoIllustrationChoice("e10_ob", "E 10 – o/b", R.drawable.e10_ob),
         LocoIllustrationChoice("br110", "BR 110", R.drawable.br110),
         LocoIllustrationChoice("br111", "BR 111", R.drawable.br111),
         LocoIllustrationChoice("br111_ob", "BR 111 – o/b", R.drawable.br111_ob),
@@ -1016,6 +1017,7 @@ private fun LocoIllustrationDropdown(
         LocoIllustrationChoice("rh1116", "Rh 1116 – ÖBB", R.drawable.rh1116),
         LocoIllustrationChoice("rh1116_nj", "Rh 1116 – Nightjet", R.drawable.rh1116_nj),
         LocoIllustrationChoice("rh1116_rj", "Rh 1116 – Railjet", R.drawable.rh1116_rj),
+        LocoIllustrationChoice("rh1144", "Rh 1144 – ÖBB", R.drawable.rh1144),
         LocoIllustrationChoice("br211", "BR 211", R.drawable.br211),
         LocoIllustrationChoice("br212", "BR 212 – Orientrot", R.drawable.br212),
         LocoIllustrationChoice("br212_standard", "BR 212 – Rot", R.drawable.br212_standard),
@@ -1178,6 +1180,7 @@ private fun locoIllustrationResource(id: String): Int? = when (id) {
     "br101" -> R.drawable.br101
     "br101_50jahre" -> R.drawable.br101_50jahre
     "br103" -> R.drawable.br103
+    "e10_ob" -> R.drawable.e10_ob
     "br110" -> R.drawable.br110
     "br111" -> R.drawable.br111
     "br111_ob" -> R.drawable.br111_ob
@@ -1207,6 +1210,7 @@ private fun locoIllustrationResource(id: String): Int? = when (id) {
     "rh1116" -> R.drawable.rh1116
     "rh1116_nj" -> R.drawable.rh1116_nj
     "rh1116_rj" -> R.drawable.rh1116_rj
+    "rh1144" -> R.drawable.rh1144
     "br211" -> R.drawable.br211
     "br212" -> R.drawable.br212
     "br212_standard" -> R.drawable.br212_standard
