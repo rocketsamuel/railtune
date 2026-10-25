@@ -6,9 +6,7 @@ import android.widget.Toast
 import android.os.Build
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.spring
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -35,11 +33,12 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.nativeCanvas
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
@@ -77,6 +76,8 @@ import java.util.Locale
 import java.util.UUID
 import kotlin.math.cos
 import kotlin.math.sin
+import android.graphics.Paint as NativePaint
+import android.graphics.Typeface
 
 fun parseSpeedFromText(text: String?): Float? {
     if (text.isNullOrBlank()) return null
@@ -484,7 +485,7 @@ private fun TabletModeScreen(
                         )
                         CircularSpeedometerGauge(
                             speed = speed,
-                            maxSpeed = maxSpeed,
+                            maxSpeed = 250f,
                             unit = "km/h",
                             modifier = Modifier.size(220.dp)
                         )
@@ -503,21 +504,18 @@ private fun TabletModeScreen(
 @Composable
 fun CircularSpeedometerGauge(
     speed: Float,
-    maxSpeed: Float = 220f,
+    maxSpeed: Float = 250f,
     unit: String = "km/h",
     modifier: Modifier = Modifier.size(220.dp)
 ) {
     val animatedSpeed by animateFloatAsState(
         targetValue = speed.coerceIn(0f, maxSpeed),
-        animationSpec = spring(
-            dampingRatio = Spring.DampingRatioNoBouncy,
-            stiffness = Spring.StiffnessLow
-        ),
         label = "speedAnimation"
     )
 
-    val trackColor = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f)
-    val onSurfaceColor = MaterialTheme.colorScheme.onSurface
+    val trackColor = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.55f)
+    val tickColor = MaterialTheme.colorScheme.onSurfaceVariant
+    val activeColor = MaterialTheme.colorScheme.primary
     val primaryContainerColor = MaterialTheme.colorScheme.onPrimaryContainer
 
     Box(
@@ -528,51 +526,42 @@ fun CircularSpeedometerGauge(
             val width = size.width
             val height = size.height
             val center = Offset(width / 2f, height / 2f)
-            val radius = (minOf(width, height) / 2f) * 0.82f
-            val strokeWidth = 14.dp.toPx()
+            val radius = (minOf(width, height) / 2f) * 0.88f
+            val strokeWidth = 9.dp.toPx()
 
             val startAngle = 140f
             val sweepAngle = 260f
 
-            // 1. Background Arc
             drawArc(
                 color = trackColor,
                 startAngle = startAngle,
                 sweepAngle = sweepAngle,
                 useCenter = false,
-                style = Stroke(width = strokeWidth, cap = StrokeCap.Round)
+                style = Stroke(width = strokeWidth, cap = StrokeCap.Butt)
             )
 
-            // 2. Active Speed Arc
             val currentSweep = (animatedSpeed / maxSpeed) * sweepAngle
-            val arcGradient = Brush.sweepGradient(
-                colorStops = arrayOf(
-                    0f to Color(0xFFFF1744),
-                    (40f / 360f) to Color(0xFFFF1744),
-                    (140f / 360f) to Color(0xFF00E676),
-                    (270f / 360f) to Color(0xFFFFB300),
-                    1f to Color(0xFFFF1744)
-                ),
-                center = center
-            )
-
             drawArc(
-                brush = arcGradient,
+                color = activeColor,
                 startAngle = startAngle,
-                sweepAngle = currentSweep.coerceAtLeast(1f),
+                sweepAngle = currentSweep,
                 useCenter = false,
-                style = Stroke(width = strokeWidth, cap = StrokeCap.Round)
+                style = Stroke(width = strokeWidth, cap = StrokeCap.Butt)
             )
 
-            // 3. Tick Marks
-            val numTicks = 11
-            for (i in 0..numTicks) {
-                val fraction = i.toFloat() / numTicks
+            val labelPaint = NativePaint(NativePaint.ANTI_ALIAS_FLAG).apply {
+                color = tickColor.toArgb()
+                textAlign = NativePaint.Align.CENTER
+                textSize = 12.dp.toPx()
+                typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
+            }
+            for (i in 0..25) {
+                val fraction = i / 25f
                 val angleDeg = startAngle + fraction * sweepAngle
                 val angleRad = Math.toRadians(angleDeg.toDouble())
-
-                val innerR = radius - strokeWidth / 2f - 4.dp.toPx()
-                val outerR = radius - strokeWidth / 2f - 12.dp.toPx()
+                val isMajorTick = i % 5 == 0
+                val innerR = radius - strokeWidth / 2f - 2.dp.toPx()
+                val outerR = radius - strokeWidth / 2f - (if (isMajorTick) 13.dp else 8.dp).toPx()
 
                 val startPt = Offset(
                     x = center.x + innerR * cos(angleRad).toFloat(),
@@ -584,49 +573,53 @@ fun CircularSpeedometerGauge(
                 )
 
                 drawLine(
-                    color = onSurfaceColor.copy(alpha = 0.5f),
+                    color = tickColor.copy(alpha = if (isMajorTick) 0.9f else 0.55f),
                     start = startPt,
                     end = endPt,
-                    strokeWidth = 2.dp.toPx(),
-                    cap = StrokeCap.Round
+                    strokeWidth = (if (isMajorTick) 1.5f else 1f).dp.toPx(),
+                    cap = StrokeCap.Butt
                 )
+                if (isMajorTick) {
+                    val labelRadius = radius - strokeWidth / 2f - 28.dp.toPx()
+                    drawContext.canvas.nativeCanvas.drawText(
+                        (fraction * maxSpeed).toInt().toString(),
+                        center.x + labelRadius * cos(angleRad).toFloat(),
+                        center.y + labelRadius * sin(angleRad).toFloat() + labelPaint.textSize * 0.35f,
+                        labelPaint
+                    )
+                }
             }
 
-            // 4. Shortened Needle (Gekürzter Zeiger - verdeckt die Zahl in der Mitte nicht)
-            val needleAngleDeg = startAngle + (animatedSpeed / maxSpeed) * sweepAngle
-            val needleAngleRad = Math.toRadians(needleAngleDeg.toDouble())
-
-            val innerNeedleR = radius * 0.48f // Nach innen gekürzt, verdeckt die Zahl nicht!
-            val outerNeedleR = radius * 0.74f
-
+            val needleAngle = Math.toRadians(
+                (startAngle + (animatedSpeed / maxSpeed) * sweepAngle).toDouble()
+            )
+            val needleStartRadius = radius * 0.48f
+            val needleEndRadius = radius * 0.78f
             val needleStart = Offset(
-                x = center.x + innerNeedleR * cos(needleAngleRad).toFloat(),
-                y = center.y + innerNeedleR * sin(needleAngleRad).toFloat()
+                x = center.x + needleStartRadius * cos(needleAngle).toFloat(),
+                y = center.y + needleStartRadius * sin(needleAngle).toFloat()
             )
-
             val needleEnd = Offset(
-                x = center.x + outerNeedleR * cos(needleAngleRad).toFloat(),
-                y = center.y + outerNeedleR * sin(needleAngleRad).toFloat()
+                x = center.x + needleEndRadius * cos(needleAngle).toFloat(),
+                y = center.y + needleEndRadius * sin(needleAngle).toFloat()
             )
-
             drawLine(
-                color = Color(0xFFFF1744),
+                color = Color(0xFFD32F2F),
                 start = needleStart,
                 end = needleEnd,
-                strokeWidth = 5.dp.toPx(),
+                strokeWidth = 2.5.dp.toPx(),
                 cap = StrokeCap.Round
             )
         }
 
-        // Center Digital Display
         Column(
             horizontalAlignment = Alignment.CenterHorizontally,
-            modifier = Modifier.padding(top = 12.dp)
+            modifier = Modifier.padding(top = 8.dp)
         ) {
             Text(
                 text = animatedSpeed.toInt().toString(),
-                fontSize = 38.sp,
-                fontWeight = FontWeight.Bold,
+                fontSize = 34.sp,
+                fontWeight = FontWeight.SemiBold,
                 fontFamily = FontFamily.Monospace,
                 color = primaryContainerColor
             )
@@ -1480,7 +1473,7 @@ fun DrivingScreen(
 
                                 CircularSpeedometerGauge(
                                     speed = displaySpeedKmH,
-                                    maxSpeed = maxLocoSpeed,
+                                    maxSpeed = 250f,
                                     unit = "km/h",
                                     modifier = Modifier.size(185.dp)
                                 )
