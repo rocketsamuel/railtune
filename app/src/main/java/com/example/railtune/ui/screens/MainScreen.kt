@@ -11,7 +11,6 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.gestures.animateScrollBy
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
@@ -72,6 +71,7 @@ import com.example.railtune.network.WifiTransferDevice
 import com.example.railtune.viewmodel.BleViewModel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collect
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.isActive
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -982,6 +982,14 @@ private fun LocoIllustrationDropdown(
     onIllustrationSelected: (String) -> Unit
 ) {
     var expanded by remember { mutableStateOf(false) }
+    val menuScrollState = rememberScrollState()
+    LaunchedEffect(expanded) {
+        if (expanded) {
+            snapshotFlow { menuScrollState.maxValue }.first { it > 0 }
+            menuScrollState.scrollTo(menuScrollState.maxValue)
+        }
+    }
+
     val illustrations = listOf(
         LocoIllustrationChoice("", "Kein Bild", null),
         LocoIllustrationChoice("br101", "BR 101", R.drawable.br101),
@@ -1026,7 +1034,7 @@ private fun LocoIllustrationDropdown(
         LocoIllustrationChoice("br401", "ICE 1 (BR 401)", R.drawable.br401),
         LocoIllustrationChoice("br402", "ICE 2 (BR 402)", R.drawable.br402),
         LocoIllustrationChoice("br411", "ICE T (BR 411)", R.drawable.br411),
-        LocoIllustrationChoice("br412", "ICE 4 (BR 412)", R.drawable.br412)
+        LocoIllustrationChoice("br412", "BR 412 – ICE 4", R.drawable.br412)
     )
     val selectedIllustration = illustrations.firstOrNull { it.id == selectedIllustrationId }
     val selectedName = selectedIllustration?.label ?: "Kein Bild"
@@ -1058,7 +1066,11 @@ private fun LocoIllustrationDropdown(
             }
         }
 
-        DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+        DropdownMenu(
+            expanded = expanded,
+            onDismissRequest = { expanded = false },
+            scrollState = menuScrollState
+        ) {
             illustrations.forEach { illustration ->
                 DropdownMenuItem(
                     text = {
@@ -1098,9 +1110,12 @@ private data class DccFunctionInputs(
     val hornLow: String = "",
     val cabLight: String = "",
     val zg12Fst1: String = "",
-    val zg12Fst2: String = ""
+    val zg12Fst2: String = "",
+    val highBeam: String = "",
+    val shunting: String = "",
+    val engineRoomLight: String = ""
 ) {
-    fun isValid(): Boolean = listOf(light, sound, hornHigh, hornLow, cabLight, zg12Fst1, zg12Fst2)
+    fun isValid(): Boolean = listOf(light, sound, hornHigh, hornLow, cabLight, zg12Fst1, zg12Fst2, highBeam, shunting, engineRoomLight)
         .all { value -> value.isBlank() || value.toIntOrNull()?.let { it in 0..63 } == true }
 
     fun toDccFunctions() = DccFunctions(
@@ -1110,7 +1125,10 @@ private data class DccFunctionInputs(
         hornLow = hornLow.toIntOrNull(),
         cabLight = cabLight.toIntOrNull(),
         zg12Fst1 = zg12Fst1.toIntOrNull(),
-        zg12Fst2 = zg12Fst2.toIntOrNull()
+        zg12Fst2 = zg12Fst2.toIntOrNull(),
+        highBeam = highBeam.toIntOrNull(),
+        shunting = shunting.toIntOrNull(),
+        engineRoomLight = engineRoomLight.toIntOrNull()
     )
 }
 
@@ -1121,7 +1139,10 @@ private fun DccFunctions.toInputs() = DccFunctionInputs(
     hornLow = hornLow?.toString().orEmpty(),
     cabLight = cabLight?.toString().orEmpty(),
     zg12Fst1 = zg12Fst1?.toString().orEmpty(),
-    zg12Fst2 = zg12Fst2?.toString().orEmpty()
+    zg12Fst2 = zg12Fst2?.toString().orEmpty(),
+    highBeam = highBeam?.toString().orEmpty(),
+    shunting = shunting?.toString().orEmpty(),
+    engineRoomLight = engineRoomLight?.toString().orEmpty()
 )
 
 private data class DccFunctionDefinition(
@@ -1173,6 +1194,9 @@ private fun DccFunctionAssignmentsEditor(
         DccFunctionNumberField("Führerstand Beleuchtung", Icons.Default.WbIncandescent, values.cabLight) { onValuesChange(values.copy(cabLight = it)) }
         DccFunctionNumberField("Zg1/2 aus Fst 1", Icons.Default.LooksOne, values.zg12Fst1) { onValuesChange(values.copy(zg12Fst1 = it)) }
         DccFunctionNumberField("Zg1/2 aus Fst 2", Icons.Default.LooksTwo, values.zg12Fst2) { onValuesChange(values.copy(zg12Fst2 = it)) }
+        DccFunctionNumberField("Fernlicht", Icons.Default.FlashOn, values.highBeam) { onValuesChange(values.copy(highBeam = it)) }
+        DccFunctionNumberField("Rangierfahrt", Icons.Default.SwapHoriz, values.shunting) { onValuesChange(values.copy(shunting = it)) }
+        DccFunctionNumberField("Maschinenraumbeleuchtung", Icons.Default.WbIncandescent, values.engineRoomLight) { onValuesChange(values.copy(engineRoomLight = it)) }
     }
 }
 
@@ -1271,16 +1295,6 @@ fun DrivingScreen(
         val selectedIndex = sortedLocos.indexOfFirst { it.id == activeLoco?.id }
         if (selectedIndex >= 0) {
             locoSelectorListState.animateScrollToItem(selectedIndex)
-            val selectedItem = locoSelectorListState.layoutInfo.visibleItemsInfo
-                .firstOrNull { it.index == selectedIndex }
-            if (selectedItem != null) {
-                val viewportCenter = (
-                    locoSelectorListState.layoutInfo.viewportStartOffset +
-                        locoSelectorListState.layoutInfo.viewportEndOffset
-                    ) / 2f
-                val itemCenter = selectedItem.offset + selectedItem.size / 2f
-                locoSelectorListState.animateScrollBy(itemCenter - viewportCenter)
-            }
         }
     }
 
@@ -1360,12 +1374,11 @@ fun DrivingScreen(
                         if (sortedLocos.isEmpty()) {
                             Text("Keine Fahrzeuge angelegt", maxLines = 1)
                         } else {
-                            BoxWithConstraints(modifier = Modifier.weight(1f)) {
+                            Box(modifier = Modifier.weight(1f)) {
                                 LazyRow(
                                     modifier = Modifier.fillMaxWidth(),
                                     state = locoSelectorListState,
-                                    contentPadding = PaddingValues(horizontal = maxWidth / 2),
-                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                                                        horizontalArrangement = Arrangement.spacedBy(8.dp),
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
                                     items(sortedLocos, key = { it.id }) { loco ->
@@ -1492,25 +1505,15 @@ fun DrivingScreen(
                                 modifier = Modifier.weight(1.1f)
                             ) {
                                 Row(
+                                    horizontalArrangement = Arrangement.Start,
                                     verticalAlignment = Alignment.CenterVertically,
-                                    modifier = Modifier.padding(bottom = 6.dp)
+                                    modifier = Modifier.fillMaxWidth().padding(bottom = 6.dp)
                                 ) {
                                     Icon(
                                         imageVector = Icons.Default.Speed,
                                         contentDescription = null,
-                                        modifier = Modifier.size(14.dp),
+                                        modifier = Modifier.size(16.dp),
                                         tint = if (hasRailComSpeed) Color(0xFF00E676) else MaterialTheme.colorScheme.primary
-                                    )
-                                    Spacer(modifier = Modifier.width(4.dp))
-                                    Text(
-                                        text = when {
-                                            usesTargetSpeed -> "Soll-Geschwindigkeit"
-                                            hasRailComSpeed -> "RailCom Ist-Speed"
-                                            else -> "Warte auf RailCom"
-                                        },
-                                        style = MaterialTheme.typography.labelSmall,
-                                        fontWeight = FontWeight.Bold,
-                                        color = MaterialTheme.colorScheme.onPrimaryContainer
                                     )
                                 }
 
@@ -1653,7 +1656,10 @@ fun DrivingScreen(
                     DccFunctionDefinition("Horn tief", Icons.Default.Campaign, loco.dccFunctions.hornLow, momentary = true),
                     DccFunctionDefinition("Führerstand Beleuchtung", Icons.Default.WbIncandescent, loco.dccFunctions.cabLight),
                     DccFunctionDefinition("Zg1/2 aus Fst 1", Icons.Default.LooksOne, loco.dccFunctions.zg12Fst1),
-                    DccFunctionDefinition("Zg1/2 aus Fst 2", Icons.Default.LooksTwo, loco.dccFunctions.zg12Fst2)
+                    DccFunctionDefinition("Zg1/2 aus Fst 2", Icons.Default.LooksTwo, loco.dccFunctions.zg12Fst2),
+                    DccFunctionDefinition("Fernlicht", Icons.Default.FlashOn, loco.dccFunctions.highBeam),
+                    DccFunctionDefinition("Rangierfahrt", Icons.Default.SwapHoriz, loco.dccFunctions.shunting),
+                    DccFunctionDefinition("Maschinenraumbeleuchtung", Icons.Default.WbIncandescent, loco.dccFunctions.engineRoomLight)
                 ).filter { it.functionNumber != null }
                 Card(
                     modifier = Modifier.fillMaxWidth(),
@@ -2291,6 +2297,9 @@ fun LiveDashboardView(
     onClearHistory: () -> Unit
 ) {
     var locoMenuExpanded by remember { mutableStateOf(false) }
+    val sortedLocos = remember(savedLocos) {
+        savedLocos.sortedBy { it.name.trim().lowercase(Locale.ROOT) }
+    }
 
     val liveSpeedKmH = parseSpeedFromText(latestPacket?.textValue) ?: 0f
     val measuredRevolutions = parseRevolutionsFromText(latestPacket?.textValue)
@@ -2393,7 +2402,7 @@ fun LiveDashboardView(
                             expanded = locoMenuExpanded,
                             onDismissRequest = { locoMenuExpanded = false }
                         ) {
-                            savedLocos.forEach { loco ->
+                            sortedLocos.forEach { loco ->
                                 DropdownMenuItem(
                                     text = { Text(loco.name) },
                                     onClick = {
