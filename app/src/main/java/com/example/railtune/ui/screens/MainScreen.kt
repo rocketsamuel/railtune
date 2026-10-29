@@ -1353,18 +1353,12 @@ fun DrivingScreen(
     ) {
         // Lokverwaltung Header & Selector
         item {
-            Card(
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(16.dp),
-                border = BorderStroke(1.dp, Color(0xFF26364E)),
-                colors = CardDefaults.cardColors(
-                    containerColor = MaterialTheme.colorScheme.surfaceVariant
-                )
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(start = 0.dp, top = 16.dp, end = 0.dp, bottom = 0.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                Column(
-                    modifier = Modifier.padding(16.dp),
-                    verticalArrangement = Arrangement.spacedBy(12.dp)
-                ) {
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween,
@@ -1466,7 +1460,6 @@ fun DrivingScreen(
                             }
                         }
                     }
-                }
             }
         }
 
@@ -1494,7 +1487,7 @@ fun DrivingScreen(
             item {
                 Card(
                     modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(18.dp),
+                    shape = RoundedCornerShape(10.dp),
                     border = BorderStroke(1.dp, Color(0xFF2B405E)),
                     colors = CardDefaults.cardColors(
                         containerColor = Color.Transparent
@@ -1506,7 +1499,7 @@ fun DrivingScreen(
                                 Brush.linearGradient(
                                     listOf(Color(0xFF13223A), Color(0xFF0E1728), Color(0xFF111D32))
                                 ),
-                                shape = RoundedCornerShape(18.dp)
+                                shape = RoundedCornerShape(10.dp)
                             )
                     ) {
                     Column(
@@ -1519,7 +1512,7 @@ fun DrivingScreen(
                         Column(
                             modifier = Modifier.fillMaxWidth(),
                             horizontalAlignment = Alignment.Start,
-                            verticalArrangement = Arrangement.spacedBy(0.dp)
+                            verticalArrangement = Arrangement.spacedBy((-18).dp)
                         ) {
                             Row(
                                 modifier = Modifier.fillMaxWidth(),
@@ -1533,6 +1526,7 @@ fun DrivingScreen(
                                 ) {
                                     Text(
                                         text = loco.name,
+                                        modifier = Modifier.offset(y = (-6).dp),
                                         style = MaterialTheme.typography.titleLarge,
                                         fontWeight = FontWeight.Bold,
                                         color = Color.White,
@@ -1541,6 +1535,7 @@ fun DrivingScreen(
                                     if (hasRailComSpeed) {
                                         Row(
                                             modifier = Modifier
+                                                .offset(x = 10.dp, y = (-6).dp)
                                                 .clip(RoundedCornerShape(12.dp))
                                                 .background(Color(0x1A39D477))
                                                 .border(1.dp, Color(0xFF39D477), RoundedCornerShape(12.dp))
@@ -1566,6 +1561,7 @@ fun DrivingScreen(
                                 FilterChip(
                                     selected = false,
                                     onClick = { editingLoco = loco },
+                                    modifier = Modifier.offset(y = (-2).dp),
                                     label = {
                                         Icon(
                                             imageVector = Icons.Default.Edit,
@@ -1756,7 +1752,7 @@ fun DrivingScreen(
                 ).filter { it.functionNumber != null }
                 Card(
                     modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(16.dp),
+                    shape = RoundedCornerShape(10.dp),
                     border = BorderStroke(1.dp, Color(0xFF26364E)),
                     colors = CardDefaults.cardColors(
                         containerColor = MaterialTheme.colorScheme.surfaceVariant
