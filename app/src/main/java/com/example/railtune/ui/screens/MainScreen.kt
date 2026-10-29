@@ -1008,6 +1008,7 @@ private fun LocoIllustrationDropdown(
         LocoIllustrationChoice("br023", "BR 023", R.drawable.br023),
         LocoIllustrationChoice("br139", "BR 139", R.drawable.br139),
         LocoIllustrationChoice("br140", "BR 140", R.drawable.br140),
+        LocoIllustrationChoice("br140_gruen", "BR 140 – Grün", R.drawable.br140_gruen),
         LocoIllustrationChoice("br141", "BR 141", R.drawable.br141),
         LocoIllustrationChoice("br146", "BR 146", R.drawable.br146),
         LocoIllustrationChoice("br147", "BR 147", R.drawable.br147),
@@ -1217,6 +1218,7 @@ private fun locoIllustrationResource(id: String): Int? = when (id) {
     "br023" -> R.drawable.br023
     "br139" -> R.drawable.br139
     "br140" -> R.drawable.br140
+    "br140_gruen" -> R.drawable.br140_gruen
     "br141" -> R.drawable.br141
     "br146" -> R.drawable.br146
     "br147" -> R.drawable.br147
