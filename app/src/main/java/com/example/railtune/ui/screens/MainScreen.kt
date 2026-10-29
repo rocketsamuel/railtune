@@ -2302,7 +2302,6 @@ fun LiveDashboardView(
     }
 
     val liveSpeedKmH = parseSpeedFromText(latestPacket?.textValue) ?: 0f
-    val measuredRevolutions = parseRevolutionsFromText(latestPacket?.textValue)
     val batteryReading = parseBatteryReading(latestPacket?.textValue)
     val selectedLoco = savedLocos.firstOrNull { it.id == selectedLocoId }
     val selectedRailCom = selectedLoco?.let { railComReadings[it.address] }
@@ -2404,7 +2403,18 @@ fun LiveDashboardView(
                         ) {
                             sortedLocos.forEach { loco ->
                                 DropdownMenuItem(
-                                    text = { Text(loco.name) },
+                                    text = {
+                                        Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                                            Text(loco.name)
+                                            if (loco.note.isNotBlank()) {
+                                                Text(
+                                                    text = loco.note,
+                                                    style = MaterialTheme.typography.bodySmall,
+                                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                                )
+                                            }
+                                        }
+                                    },
                                     onClick = {
                                         onSelectedLocoChange(loco.id)
                                         locoMenuExpanded = false
@@ -2449,23 +2459,6 @@ fun LiveDashboardView(
                     )
                 }
 
-                Text(
-                    text = measuredRevolutions?.let {
-                        "Umdrehungen (letzte 3s): ${"%.1f".format(Locale.getDefault(), it)}"
-                    } ?: "Umdrehungen (letzte 3ss): –",
-                    style = MaterialTheme.typography.bodyMedium,
-                    fontWeight = FontWeight.Medium,
-                    color = MaterialTheme.colorScheme.onPrimaryContainer
-                )
-                latestPacket?.let {
-                    val sdf = remember { SimpleDateFormat("HH:mm:ss.SSS", Locale.getDefault()) }
-                    val formattedTime = sdf.format(Date(it.timestampMs))
-                    Text(
-                        text = "Letztes Paket: $formattedTime (${it.rawBytes.size} Bytes)",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.8f)
-                    )
-                }
             }
         }
 
