@@ -9,7 +9,9 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -35,6 +37,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
@@ -47,6 +50,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.unit.dp
@@ -193,8 +197,8 @@ fun MainScreen(viewModel: BleViewModel) {
     Scaffold(
         bottomBar = {
             NavigationBar(
-                containerColor = Color.Black,
-                contentColor = Color.White
+                containerColor = Color(0xFF090E18),
+                contentColor = Color(0xFFEAF1FC)
             ) {
                 NavigationBarItem(
                     selected = selectedTabIndex == 0,
@@ -202,11 +206,11 @@ fun MainScreen(viewModel: BleViewModel) {
                     icon = { Icon(Icons.Default.PlayArrow, contentDescription = null) },
                     label = { Text("Fahren") },
                     colors = NavigationBarItemDefaults.colors(
-                        selectedIconColor = Color.White,
+                        selectedIconColor = Color(0xFF65CFFF),
                         selectedTextColor = Color.White,
-                        indicatorColor = Color(0xFF424242),
-                        unselectedIconColor = Color.LightGray,
-                        unselectedTextColor = Color.LightGray
+                        indicatorColor = Color(0xFF18354D),
+                        unselectedIconColor = Color(0xFF8798B2),
+                        unselectedTextColor = Color.White
                     )
                 )
                 NavigationBarItem(
@@ -215,11 +219,11 @@ fun MainScreen(viewModel: BleViewModel) {
                     icon = { Icon(Icons.Default.Speed, contentDescription = null) },
                     label = { Text("Messen") },
                     colors = NavigationBarItemDefaults.colors(
-                        selectedIconColor = Color.White,
+                        selectedIconColor = Color(0xFF65CFFF),
                         selectedTextColor = Color.White,
-                        indicatorColor = Color(0xFF424242),
-                        unselectedIconColor = Color.LightGray,
-                        unselectedTextColor = Color.LightGray
+                        indicatorColor = Color(0xFF18354D),
+                        unselectedIconColor = Color(0xFF8798B2),
+                        unselectedTextColor = Color.White
                     )
                 )
                 NavigationBarItem(
@@ -228,11 +232,11 @@ fun MainScreen(viewModel: BleViewModel) {
                     icon = { Icon(Icons.Default.Code, contentDescription = null) },
                     label = { Text("Programmieren") },
                     colors = NavigationBarItemDefaults.colors(
-                        selectedIconColor = Color.White,
+                        selectedIconColor = Color(0xFF65CFFF),
                         selectedTextColor = Color.White,
-                        indicatorColor = Color(0xFF424242),
-                        unselectedIconColor = Color.LightGray,
-                        unselectedTextColor = Color.LightGray
+                        indicatorColor = Color(0xFF18354D),
+                        unselectedIconColor = Color(0xFF8798B2),
+                        unselectedTextColor = Color.White
                     )
                 )
                 if (isWideDisplay) {
@@ -242,11 +246,11 @@ fun MainScreen(viewModel: BleViewModel) {
                         icon = { Icon(Icons.Default.TabletAndroid, contentDescription = null) },
                         label = { Text("Tablet") },
                         colors = NavigationBarItemDefaults.colors(
-                            selectedIconColor = Color.White,
+                            selectedIconColor = Color(0xFF65CFFF),
                             selectedTextColor = Color.White,
-                            indicatorColor = Color(0xFF424242),
-                            unselectedIconColor = Color.LightGray,
-                            unselectedTextColor = Color.LightGray
+                            indicatorColor = Color(0xFF18354D),
+                            unselectedIconColor = Color(0xFF8798B2),
+                            unselectedTextColor = Color.White
                         )
                     )
                 }
@@ -521,7 +525,7 @@ fun CircularSpeedometerGauge(
     )
 
     val trackColor = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.55f)
-    val tickColor = MaterialTheme.colorScheme.onSurfaceVariant
+    val tickColor = Color(0xFFEAF1FC)
     val activeColor = MaterialTheme.colorScheme.primary
     val primaryContainerColor = MaterialTheme.colorScheme.onPrimaryContainer
 
@@ -1247,6 +1251,25 @@ private fun locoIllustrationResource(id: String): Int? = when (id) {
     else -> null
 }
 
+@Composable
+private fun dccFunctionChipColors() = FilterChipDefaults.filterChipColors(
+    containerColor = Color(0xFF182233),
+    labelColor = Color(0xFF9AAAC1),
+    selectedContainerColor = Color(0xFF203C59),
+        selectedLabelColor = Color.White
+)
+
+@Composable
+private fun dccFunctionChipBorder(selected: Boolean): BorderStroke? =
+    FilterChipDefaults.filterChipBorder(
+        enabled = true,
+        selected = selected,
+        borderColor = Color(0xFF2A3A50),
+        selectedBorderColor = Color(0xFF52CBFF),
+        borderWidth = 1.dp,
+        selectedBorderWidth = 2.dp
+    )
+
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun DrivingScreen(
@@ -1332,6 +1355,8 @@ fun DrivingScreen(
         item {
             Card(
                 modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(16.dp),
+                border = BorderStroke(1.dp, Color(0xFF26364E)),
                 colors = CardDefaults.cardColors(
                     containerColor = MaterialTheme.colorScheme.surfaceVariant
                 )
@@ -1349,7 +1374,7 @@ fun DrivingScreen(
                             text = "FAHRZEUGE (${savedLocos.size})",
                             style = MaterialTheme.typography.titleMedium,
                             fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.primary
+                            color = Color.White
                         )
                         Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                             IconButton(onClick = { showWifiExportDialog = true }, enabled = savedLocos.isNotEmpty()) {
@@ -1361,7 +1386,15 @@ fun DrivingScreen(
                                 label = { Text("Neu", maxLines = 1) },
                                 colors = FilterChipDefaults.filterChipColors(
                                     containerColor = MaterialTheme.colorScheme.surfaceVariant,
-                                    labelColor = MaterialTheme.colorScheme.onSurfaceVariant
+                                    labelColor = Color.White
+                                ),
+                                border = FilterChipDefaults.filterChipBorder(
+                                    enabled = true,
+                                    selected = false,
+                                    borderColor = Color(0xFF2A3A50),
+                                    selectedBorderColor = Color(0xFF52CBFF),
+                                    borderWidth = 1.dp,
+                                    selectedBorderWidth = 2.dp
                                 )
                             )
                         }
@@ -1384,42 +1417,50 @@ fun DrivingScreen(
                                     items(sortedLocos, key = { it.id }) { loco ->
                                         val isSelected = loco.id == activeLoco?.id
                                         val illustrationRes = locoIllustrationResource(loco.illustrationId)
-                                        FilterChip(
-                                            selected = isSelected,
+                                        val chipShape = RoundedCornerShape(8.dp)
+                                        Surface(
                                             onClick = {
                                                 selectedLocoId = loco.id
                                                 targetSpeedKmH = 0f
                                             },
-                                            label = {
+                                            modifier = Modifier.widthIn(min = 96.dp),
+                                            shape = chipShape,
+                                            color = if (isSelected) Color(0xFF1B3A59) else Color(0xFF111D31),
+                                            contentColor = Color.White,
+                                            border = BorderStroke(
+                                                if (isSelected) 2.dp else 1.dp,
+                                                if (isSelected) Color(0xFF12C9FF) else Color(0xFF29446D)
+                                            ),
+                                            shadowElevation = if (isSelected) 3.dp else 0.dp
+                                        ) {
+                                            Column(
+                                                modifier = Modifier
+                                                    .fillMaxWidth()
+                                                    .padding(start = 9.dp, top = 5.dp, end = 9.dp, bottom = 5.dp),
+                                                horizontalAlignment = Alignment.CenterHorizontally,
+                                                verticalArrangement = Arrangement.spacedBy(2.dp)
+                                            ) {
+                                                Text(
+                                                    text = loco.name,
+                                                    maxLines = 1,
+                                                    fontSize = 14.sp,
+                                                    fontWeight = FontWeight.SemiBold,
+                                                    textAlign = TextAlign.Center,
+                                                        modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp)
+                                                )
                                                 if (illustrationRes != null) {
-                                                    Column(
-                                                        modifier = Modifier.padding(vertical = 4.dp),
-                                                        horizontalAlignment = Alignment.CenterHorizontally,
-                                                        verticalArrangement = Arrangement.spacedBy(2.dp)
-                                                    ) {
-                                                        Text(text = loco.name, maxLines = 1)
-                                                        Image(
-                                                            painter = painterResource(illustrationRes),
-                                                            contentDescription = null,
-                                                            modifier = Modifier.width(64.dp).height(20.dp),
-                                                            contentScale = ContentScale.Fit
-                                                        )
-                                                    }
-                                                } else {
-                                                    Text(
-                                                        text = loco.name,
-                                                        maxLines = 1,
-                                                        modifier = Modifier.padding(vertical = 4.dp)
+                                                    Image(
+                                                        painter = painterResource(illustrationRes),
+                                                        contentDescription = null,
+                                                        modifier = Modifier
+                                                            .offset(y = (-4).dp)
+                                                            .width(62.dp)
+                                                            .height(26.dp),
+                                                        contentScale = ContentScale.Fit
                                                     )
                                                 }
-                                            },
-                                            colors = FilterChipDefaults.filterChipColors(
-                                                containerColor = MaterialTheme.colorScheme.surfaceVariant,
-                                                labelColor = MaterialTheme.colorScheme.onSurfaceVariant,
-                                                selectedContainerColor = MaterialTheme.colorScheme.primary,
-                                                selectedLabelColor = MaterialTheme.colorScheme.onPrimary
-                                            )
-                                        )
+                                            }
+                                        }
                                     }
                                 }
                             }
@@ -1453,43 +1494,105 @@ fun DrivingScreen(
             item {
                 Card(
                     modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(18.dp),
+                    border = BorderStroke(1.dp, Color(0xFF2B405E)),
                     colors = CardDefaults.cardColors(
-                        containerColor = lerp(
-                            MaterialTheme.colorScheme.primaryContainer,
-                            MaterialTheme.colorScheme.surface,
-                            0.08f
-                        )
+                        containerColor = Color.Transparent
                     )
                 ) {
+                    Box(
+                        modifier = Modifier
+                            .background(
+                                Brush.linearGradient(
+                                    listOf(Color(0xFF13223A), Color(0xFF0E1728), Color(0xFF111D32))
+                                ),
+                                shape = RoundedCornerShape(18.dp)
+                            )
+                    ) {
                     Column(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(16.dp),
+                            .padding(start = 16.dp, top = 10.dp, end = 16.dp, bottom = 16.dp),
                         verticalArrangement = Arrangement.spacedBy(12.dp)
                     ) {
                         // Header: Lok Name & Adresse
-                        Row(
+                        Column(
                             modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
+                            horizontalAlignment = Alignment.Start,
+                            verticalArrangement = Arrangement.spacedBy(0.dp)
                         ) {
-                            Column {
-                                Text(
-                                    text = loco.name,
-                                    style = MaterialTheme.typography.titleLarge,
-                                    fontWeight = FontWeight.Bold,
-                                    color = MaterialTheme.colorScheme.onPrimaryContainer
-                                )
-                                if (loco.note.isNotBlank()) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Row(
+                                    modifier = Modifier.weight(1f),
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
                                     Text(
-                                        text = loco.note,
-                                        style = MaterialTheme.typography.bodySmall,
-                                        color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.8f)
+                                        text = loco.name,
+                                        style = MaterialTheme.typography.titleLarge,
+                                        fontWeight = FontWeight.Bold,
+                                        color = Color.White,
+                                        maxLines = 1
                                     )
+                                    if (hasRailComSpeed) {
+                                        Row(
+                                            modifier = Modifier
+                                                .clip(RoundedCornerShape(12.dp))
+                                                .background(Color(0x1A39D477))
+                                                .border(1.dp, Color(0xFF39D477), RoundedCornerShape(12.dp))
+                                                .padding(horizontal = 6.dp, vertical = 2.dp),
+                                            horizontalArrangement = Arrangement.spacedBy(2.dp),
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            Icon(
+                                                imageVector = Icons.Default.Speed,
+                                                contentDescription = null,
+                                                modifier = Modifier.size(12.dp),
+                                                tint = Color(0xFF00E676)
+                                            )
+                                            Text(
+                                                text = "Online",
+                                                style = MaterialTheme.typography.labelSmall,
+                                                fontSize = 10.sp,
+                                                color = Color.White
+                                            )
+                                        }
+                                    }
                                 }
+                                FilterChip(
+                                    selected = false,
+                                    onClick = { editingLoco = loco },
+                                    label = {
+                                        Icon(
+                                            imageVector = Icons.Default.Edit,
+                                            contentDescription = "Lok bearbeiten",
+                                            modifier = Modifier.size(18.dp)
+                                        )
+                                    },
+                                    colors = FilterChipDefaults.filterChipColors(
+                                        containerColor = Color.Transparent,
+                                        labelColor = Color.White
+                                    ),
+                                    border = FilterChipDefaults.filterChipBorder(
+                                        enabled = true,
+                                        selected = false,
+                                        borderColor = Color(0xFF2A3A50),
+                                        selectedBorderColor = Color(0xFF52CBFF),
+                                        borderWidth = 1.dp,
+                                        selectedBorderWidth = 2.dp
+                                    )
+                                )
                             }
-                            IconButton(onClick = { editingLoco = loco }) {
-                                Icon(Icons.Default.Edit, contentDescription = "Lok bearbeiten")
+                            if (loco.note.isNotBlank()) {
+                                Text(
+                                    text = loco.note,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = Color.White
+                                )
                             }
                         }
 
@@ -1502,21 +1605,10 @@ fun DrivingScreen(
                             // Linke Seite: Tacho
                             Column(
                                 horizontalAlignment = Alignment.CenterHorizontally,
-                                modifier = Modifier.weight(1.1f)
+                                modifier = Modifier
+                                    .weight(1.1f)
+                                    .offset(y = 15.dp)
                             ) {
-                                Row(
-                                    horizontalArrangement = Arrangement.Start,
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    modifier = Modifier.fillMaxWidth().padding(bottom = 6.dp)
-                                ) {
-                                    Icon(
-                                        imageVector = Icons.Default.Speed,
-                                        contentDescription = null,
-                                        modifier = Modifier.size(16.dp),
-                                        tint = if (hasRailComSpeed) Color(0xFF00E676) else MaterialTheme.colorScheme.primary
-                                    )
-                                }
-
                                 CircularSpeedometerGauge(
                                     speed = displaySpeedKmH,
                                     maxSpeed = 250f,
@@ -1646,6 +1738,7 @@ fun DrivingScreen(
                     }
                 }
             }
+            }
 
             // Lok Funktionen Card
             item {
@@ -1663,6 +1756,8 @@ fun DrivingScreen(
                 ).filter { it.functionNumber != null }
                 Card(
                     modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(16.dp),
+                    border = BorderStroke(1.dp, Color(0xFF26364E)),
                     colors = CardDefaults.cardColors(
                         containerColor = MaterialTheme.colorScheme.surfaceVariant
                     )
@@ -1703,7 +1798,9 @@ fun DrivingScreen(
                                         selected = isOn,
                                         onClick = {},
                                         interactionSource = interactionSource,
-                                        label = { Icon(function.icon, contentDescription = function.label) }
+                                        label = { Icon(function.icon, contentDescription = function.label) },
+                                        colors = dccFunctionChipColors(),
+                                        border = dccFunctionChipBorder(isOn)
                                     )
                                 } else {
                                     FilterChip(
@@ -1717,7 +1814,9 @@ fun DrivingScreen(
                                             }
                                             onSetLocoFunction(loco.address, functionNumber, nextState)
                                         },
-                                        label = { Icon(function.icon, contentDescription = function.label) }
+                                        label = { Icon(function.icon, contentDescription = function.label) },
+                                        colors = dccFunctionChipColors(),
+                                        border = dccFunctionChipBorder(isOn)
                                     )
                                 }
                             }

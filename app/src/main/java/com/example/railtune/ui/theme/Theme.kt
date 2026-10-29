@@ -12,11 +12,34 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 
 private val DarkColorScheme = darkColorScheme(
-    primary = Color(0xFF00E676),
-    secondary = Color(0xFF03A9F4),
-    tertiary = Color(0xFFFF9800),
-    background = Color(0xFF121212),
-    surface = Color(0xFF1E1E1E)
+    primary = Color(0xFF65CFFF),
+    onPrimary = Color(0xFF082136),
+    primaryContainer = Color(0xFF17283D),
+    onPrimaryContainer = Color(0xFFF1F6FF),
+    secondary = Color(0xFF55B9E8),
+    onSecondary = Color(0xFF071B28),
+    secondaryContainer = Color(0xFF172B3D),
+    onSecondaryContainer = Color(0xFFD8EAF7),
+    tertiary = Color(0xFFFFAB70),
+    onTertiary = Color(0xFF2A1608),
+    tertiaryContainer = Color(0xFF482B1D),
+    onTertiaryContainer = Color(0xFFFFE4CF),
+    error = Color(0xFFFF716C),
+    onError = Color(0xFF2B0B0A),
+    errorContainer = Color(0xFF4A1B22),
+    onErrorContainer = Color(0xFFFFDAD6),
+    background = Color(0xFF0B1220),
+    onBackground = Color(0xFFEAF1FC),
+    surface = Color(0xFF101827),
+    onSurface = Color(0xFFEAF1FC),
+    surfaceVariant = Color(0xFF121C2C),
+    onSurfaceVariant = Color(0xFF9AAAC1),
+    outline = Color(0xFF52647F),
+    outlineVariant = Color(0xFF293A53),
+    inverseSurface = Color(0xFFEAF1FC),
+    inverseOnSurface = Color(0xFF192231),
+    inversePrimary = Color(0xFF17618A),
+    scrim = Color(0xFF000000)
 )
 
 private val LightColorScheme = lightColorScheme(

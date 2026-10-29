@@ -19,7 +19,7 @@ class MainActivity : ComponentActivity() {
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         enableEdgeToEdge()
         setContent {
-            RailTuneTheme {
+            RailTuneTheme(darkTheme = true, dynamicColor = false) {
                 MainScreen(viewModel = bleViewModel)
             }
         }
