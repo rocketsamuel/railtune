@@ -1437,6 +1437,32 @@ fun DrivingScreen(
                 ?: savedLocos.firstOrNull()?.id.orEmpty()
         )
     }
+    var showVehicleOverview by rememberSaveable { mutableStateOf(false) }
+    var favoriteLocoIds by remember {
+        mutableStateOf(drivingPreferences.getStringSet("favorite_loco_ids", emptySet())!!.toSet())
+    }
+    var recentLocoIds by remember {
+        mutableStateOf(drivingPreferences.getString("recent_driving_loco_ids", "").orEmpty()
+            .split(",").filter { it.isNotBlank() }.distinct())
+    }
+    fun recordLocoControl(address: Int) {
+        val id = savedLocos.firstOrNull { it.id == selectedLocoId && it.address == address }?.id
+            ?: return
+        val updated = listOf(id) + recentLocoIds.filter { it != id }
+        if (updated != recentLocoIds) {
+            recentLocoIds = updated
+            drivingPreferences.edit().putString("recent_driving_loco_ids", updated.joinToString(",")).apply()
+        }
+    }
+    fun controlSpeed(address: Int, speed: Float, forward: Boolean) {
+        recordLocoControl(address)
+        onSetLocoSpeed(address, speed, forward)
+    }
+    fun controlFunction(address: Int, function: Int, enabled: Boolean) {
+        recordLocoControl(address)
+        onSetLocoFunction(address, function, enabled)
+    }
+
     var targetSpeedKmH by remember { mutableFloatStateOf(0f) }
     var isForwardDirection by remember { mutableStateOf(true) }
 
@@ -1488,7 +1514,24 @@ fun DrivingScreen(
         }
     }
 
-    LazyColumn(
+    if (showVehicleOverview) {
+        VehicleOverview(
+            locos = savedLocos,
+            favoriteIds = favoriteLocoIds,
+            recentIds = recentLocoIds,
+            onBack = { showVehicleOverview = false },
+            onSelect = { loco ->
+                selectedLocoId = loco.id
+                targetSpeedKmH = 0f
+                showVehicleOverview = false
+            },
+            onToggleFavorite = { loco ->
+                favoriteLocoIds = if (loco.id in favoriteLocoIds) favoriteLocoIds - loco.id
+                    else favoriteLocoIds + loco.id
+                drivingPreferences.edit().putStringSet("favorite_loco_ids", favoriteLocoIds).apply()
+            }
+        )
+    } else LazyColumn(
         modifier = Modifier.fillMaxSize(),
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
@@ -1502,19 +1545,38 @@ fun DrivingScreen(
             ) {
                     Row(
                         modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
+                        horizontalArrangement = Arrangement.spacedBy(4.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Text(
                             text = "FAHRZEUGE (${savedLocos.size})",
-                            style = MaterialTheme.typography.titleMedium,
+                            modifier = Modifier.weight(1f),
+                            style = MaterialTheme.typography.titleSmall,
                             fontWeight = FontWeight.Bold,
-                            color = Color.White
+                            color = Color.White,
+                            maxLines = 1,
+                            overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
                         )
-                        Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                            IconButton(onClick = { showWifiExportDialog = true }, enabled = savedLocos.isNotEmpty()) {
-                                Icon(Icons.Default.Output, contentDescription = "Export/Teilen")
-                            }
+                        IconButton(onClick = { showWifiExportDialog = true }, enabled = savedLocos.isNotEmpty()) {
+                            Icon(Icons.Default.Output, contentDescription = "Export/Teilen")
+                        }
+                            FilterChip(
+                                selected = false,
+                                onClick = { showVehicleOverview = true },
+                                label = { Text("Übersicht", maxLines = 1) },
+                                colors = FilterChipDefaults.filterChipColors(
+                                    containerColor = MaterialTheme.colorScheme.surfaceVariant,
+                                    labelColor = Color.White
+                                ),
+                                border = FilterChipDefaults.filterChipBorder(
+                                    enabled = true,
+                                    selected = false,
+                                    borderColor = Color(0xFF2A3A50),
+                                    selectedBorderColor = Color(0xFF52CBFF),
+                                    borderWidth = 1.dp,
+                                    selectedBorderWidth = 2.dp
+                                )
+                            )
                             FilterChip(
                                 selected = false,
                                 onClick = { showAddLocoDialog = true },
@@ -1532,7 +1594,6 @@ fun DrivingScreen(
                                     selectedBorderWidth = 2.dp
                                 )
                             )
-                        }
                     }
 
                     Row(
@@ -1790,7 +1851,7 @@ fun DrivingScreen(
                                             targetSpeedKmH = newValue
                                             val speedPercent = (newValue / maxLocoSpeed * 100f)
                                                 .coerceIn(0f, 100f)
-                                            onSetLocoSpeed(loco.address, speedPercent, isForwardDirection)
+                                            controlSpeed(loco.address, speedPercent, isForwardDirection)
                                         },
                                         valueRange = 0f..maxLocoSpeed,
                                         colors = SliderDefaults.colors(
@@ -1825,7 +1886,7 @@ fun DrivingScreen(
                                 FilledTonalIconButton(
                                     onClick = {
                                         isForwardDirection = false
-                                        onSetLocoSpeed(loco.address, targetSpeedPercent, false)
+                                        controlSpeed(loco.address, targetSpeedPercent, false)
                                     },
                                     modifier = Modifier.size(40.dp),
                                     colors = IconButtonDefaults.filledTonalIconButtonColors(
@@ -1841,7 +1902,7 @@ fun DrivingScreen(
                                 FilledTonalIconButton(
                                     onClick = {
                                         isForwardDirection = true
-                                        onSetLocoSpeed(loco.address, targetSpeedPercent, true)
+                                        controlSpeed(loco.address, targetSpeedPercent, true)
                                     },
                                     modifier = Modifier.size(40.dp),
                                     colors = IconButtonDefaults.filledTonalIconButtonColors(
@@ -1860,7 +1921,7 @@ fun DrivingScreen(
                                 FilledIconButton(
                                     onClick = {
                                         targetSpeedKmH = 0f
-                                        onSetLocoSpeed(loco.address, 0f, isForwardDirection)
+                                        controlSpeed(loco.address, 0f, isForwardDirection)
                                     },
                                     modifier = Modifier.size(40.dp),
                                     colors = IconButtonDefaults.filledIconButtonColors(
@@ -1918,9 +1979,9 @@ fun DrivingScreen(
                                 LaunchedEffect(loco.address, functionNumber, interactionSource) {
                                     interactionSource.interactions.collect { interaction ->
                                         when (interaction) {
-                                            is PressInteraction.Press -> onSetLocoFunction(loco.address, functionNumber, true)
+                                            is PressInteraction.Press -> controlFunction(loco.address, functionNumber, true)
                                             is PressInteraction.Release,
-                                            is PressInteraction.Cancel -> onSetLocoFunction(loco.address, functionNumber, false)
+                                            is PressInteraction.Cancel -> controlFunction(loco.address, functionNumber, false)
                                             else -> Unit
                                         }
                                     }
@@ -1945,7 +2006,7 @@ fun DrivingScreen(
                                         } else {
                                             activeDccFunctionNumbers - functionNumber
                                         }
-                                        onSetLocoFunction(loco.address, functionNumber, nextState)
+                                        controlFunction(loco.address, functionNumber, nextState)
                                     },
                                     label = { DccFunctionIcon(function, isOn) },
                                     colors = dccFunctionChipColors(),
@@ -2230,6 +2291,141 @@ fun DrivingScreen(
             },
             onDismiss = { showWifiExportDialog = false }
         )
+    }
+}
+
+@Composable
+private fun VehicleOverview(
+    locos: List<Loco>,
+    favoriteIds: Set<String>,
+    recentIds: List<String>,
+    onBack: () -> Unit,
+    onSelect: (Loco) -> Unit,
+    onToggleFavorite: (Loco) -> Unit
+) {
+    androidx.activity.compose.BackHandler(onBack = onBack)
+    var query by rememberSaveable { mutableStateOf("") }
+    var filter by rememberSaveable { mutableIntStateOf(0) }
+    val sorted = remember(locos) { locos.sortedBy { it.name.lowercase(Locale.ROOT) } }
+    val candidates = when (filter) {
+        1 -> sorted.filter { it.id in favoriteIds }
+        2 -> recentIds.mapNotNull { id -> locos.firstOrNull { it.id == id } }
+        else -> sorted
+    }
+    val visible = candidates.filter {
+        query.isBlank() || it.name.contains(query.trim(), ignoreCase = true) ||
+            it.address.toString().contains(query.trim()) ||
+            it.note.contains(query.trim(), ignoreCase = true) ||
+            it.illustrationId.contains(query.trim(), ignoreCase = true)
+    }
+    Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            IconButton(onClick = onBack) {
+                Icon(Icons.Default.ArrowBack, contentDescription = "Zurück zum Tacho")
+            }
+            Text("Fahrzeugübersicht", style = MaterialTheme.typography.titleLarge,
+                fontWeight = FontWeight.Bold)
+        }
+        OutlinedTextField(
+            value = query,
+            onValueChange = { query = it },
+            modifier = Modifier.fillMaxWidth(),
+            placeholder = { Text("Name, Baureihe oder Adresse", maxLines = 1) },
+            leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
+            trailingIcon = {
+                if (query.isNotEmpty()) IconButton(onClick = { query = "" }) {
+                    Icon(Icons.Default.Close, contentDescription = "Suche leeren")
+                }
+            },
+            singleLine = true
+        )
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            listOf("Alle", "Favoriten", "Zuletzt").forEachIndexed { index, label ->
+                FilterChip(selected = filter == index, onClick = { filter = index },
+                    label = { Text(label) })
+            }
+        }
+        if (visible.isEmpty()) {
+            Text(
+                when {
+                    query.isNotBlank() -> "Keine passenden Fahrzeuge gefunden."
+                    filter == 1 -> "Noch keine Favoriten. Markiere Fahrzeuge mit dem Stern."
+                    filter == 2 -> "Noch keine Fahrzeuge gesteuert."
+                    else -> "Keine Fahrzeuge angelegt."
+                },
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(16.dp)
+            )
+        } else {
+            key(filter, query) {
+                LazyVerticalGrid(
+                    columns = GridCells.Fixed(3),
+                    modifier = Modifier.weight(1f).fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    verticalArrangement = Arrangement.spacedBy(10.dp),
+                    contentPadding = PaddingValues(bottom = 16.dp)
+                ) {
+                    items(visible, key = { it.id }) { loco ->
+                        VehicleOverviewCard(loco, loco.id in favoriteIds,
+                            onSelect = { onSelect(loco) },
+                            onToggleFavorite = { onToggleFavorite(loco) })
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun VehicleOverviewCard(
+    loco: Loco,
+    favorite: Boolean,
+    onSelect: () -> Unit,
+    onToggleFavorite: () -> Unit
+) {
+    Card(
+        onClick = onSelect,
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
+        shape = RoundedCornerShape(12.dp)
+    ) {
+        Box(Modifier.fillMaxWidth()) {
+        Column(Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 6.dp)) {
+            Box(Modifier.fillMaxWidth().height(66.dp)) {
+                val illustration = locoIllustrationResource(loco.illustrationId)
+                if (illustration != null) {
+                    Image(painterResource(illustration), contentDescription = null,
+                        contentScale = ContentScale.Fit,
+                        modifier = Modifier.fillMaxWidth().height(56.dp).align(Alignment.BottomCenter).offset(y = 2.dp))
+                } else {
+                    Icon(Icons.Default.Train, contentDescription = null,
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.size(48.dp).align(Alignment.BottomCenter).offset(y = 2.dp))
+                }
+
+            }
+            Text(
+                text = loco.name,
+                modifier = Modifier.fillMaxWidth(),
+                color = Color.White,
+                fontWeight = FontWeight.SemiBold,
+                maxLines = 2,
+                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
+            )
+            Text(
+                text = "Adresse " + loco.address,
+                modifier = Modifier.fillMaxWidth(),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+                IconButton(onClick = onToggleFavorite, modifier = Modifier.align(Alignment.TopEnd).offset(x = 2.dp, y = (-4).dp)) {
+                    Icon(if (favorite) Icons.Default.Star else Icons.Default.StarBorder,
+                        contentDescription = if (favorite) "Favorit entfernen" else "Als Favorit markieren",
+                        tint = if (favorite) MaterialTheme.colorScheme.primary
+                            else MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+        }
     }
 }
 
