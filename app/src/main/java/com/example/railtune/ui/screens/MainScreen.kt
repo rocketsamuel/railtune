@@ -6,6 +6,8 @@ import android.widget.Toast
 import android.os.Build
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.tween
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
@@ -130,6 +132,10 @@ fun MainScreen(viewModel: BleViewModel) {
     // z21 & CV States
     val z21Ip by viewModel.z21Ip.collectAsState()
     val z21Status by viewModel.z21Status.collectAsState()
+    val isZ21Online by viewModel.isZ21Online.collectAsState()
+    val isEmergencyStopActive by viewModel.isEmergencyStopActive.collectAsState()
+    val isEmergencyStopPending by viewModel.isEmergencyStopPending.collectAsState()
+    val isEmergencyReleasePending by viewModel.isEmergencyReleasePending.collectAsState()
     val cvResult by viewModel.cvResult.collectAsState()
     val isCvBusy by viewModel.isCvBusy.collectAsState()
     val savedLocos by viewModel.savedLocos.collectAsState()
@@ -198,6 +204,84 @@ fun MainScreen(viewModel: BleViewModel) {
     }
 
     Scaffold(
+        topBar = {
+            Surface(color = Color(0xFF090E18), contentColor = Color.White) {
+                Column(modifier = Modifier.fillMaxWidth().statusBarsPadding()) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp).height(32.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        val z21ConnectionLabel = when {
+                            !isZ21Online -> "offline"
+                            isEmergencyStopActive -> "NOT-AUS"
+                            else -> "online"
+                        }
+                        val z21ConnectionColor = when {
+                            !isZ21Online -> Color(0xFF8798B2)
+                            isEmergencyStopActive -> Color(0xFFFF4444)
+                            else -> Color(0xFF00E676)
+                        }
+                        Column(verticalArrangement = Arrangement.spacedBy(1.dp)) {
+                            Text("z21", fontSize = 11.sp, lineHeight = 12.sp, fontWeight = FontWeight.Bold)
+                            Row(
+                                horizontalArrangement = Arrangement.spacedBy(5.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Box(Modifier.size(6.dp).background(z21ConnectionColor, CircleShape))
+                                Text(z21ConnectionLabel, fontSize = 10.sp, lineHeight = 12.sp)
+                            }
+                        }
+                        val emergencyPulse = remember { Animatable(0f) }
+                        val shouldPulse = isEmergencyStopActive || isEmergencyStopPending
+                        LaunchedEffect(shouldPulse) {
+                            emergencyPulse.snapTo(0f)
+                            if (shouldPulse) {
+                                while (isActive) {
+                                    emergencyPulse.animateTo(1f, tween(700))
+                                    emergencyPulse.animateTo(0f, tween(700))
+                                }
+                            }
+                        }
+                        val emergencyBorderWidth = with(androidx.compose.ui.platform.LocalDensity.current) { 2f.toDp() }
+                        CompositionLocalProvider(LocalMinimumInteractiveComponentSize provides 0.dp) {
+                            Button(
+                                onClick = {
+                                    if (isEmergencyStopActive && !isEmergencyStopPending) viewModel.releaseEmergencyStop()
+                                    else viewModel.emergencyStop()
+                                },
+                                modifier = Modifier.height(32.dp),
+                                shape = RoundedCornerShape(8.dp),
+                                colors = ButtonDefaults.buttonColors(
+                                    containerColor = lerp(Color(0xFF4A1010), Color(0xFF9E2020), emergencyPulse.value),
+                                    contentColor = Color.White
+                                ),
+                                border = BorderStroke(
+                                    emergencyBorderWidth,
+                                    lerp(MaterialTheme.colorScheme.error, Color(0xFFFFD0D0), emergencyPulse.value)
+                                ),
+                                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 0.dp)
+                            ) {
+                                Icon(Icons.Default.StopCircle, contentDescription = null, modifier = Modifier.size(18.dp))
+                                Spacer(Modifier.width(6.dp))
+                                Text(
+                                    when {
+                                        isEmergencyReleasePending -> "FREIGEBEN …"
+                                        isEmergencyStopPending -> "NOT-AUS …"
+                                        isEmergencyStopActive -> "FREIGEBEN"
+                                        else -> "STOP"
+                                    },
+                                    fontWeight = FontWeight.Bold,
+                                    style = MaterialTheme.typography.labelMedium
+                                )
+                            }
+                        }
+                    }
+                    Spacer(Modifier.height(8.dp))
+                    HorizontalDivider(thickness = 1.dp, color = Color(0xFF26364E))
+                }
+            }
+        },
         bottomBar = {
             NavigationBar(
                 containerColor = Color(0xFF090E18),
@@ -268,7 +352,7 @@ fun MainScreen(viewModel: BleViewModel) {
             Column(
                 modifier = Modifier
                     .fillMaxSize()
-                    .padding(16.dp),
+                    .padding(start = 16.dp, top = 2.dp, end = 16.dp, bottom = 16.dp),
                 verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
                 if (!hasPermissions) {
@@ -1406,7 +1490,7 @@ fun DrivingScreen(
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(start = 0.dp, top = 16.dp, end = 0.dp, bottom = 0.dp),
+                    .padding(0.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
                     Row(

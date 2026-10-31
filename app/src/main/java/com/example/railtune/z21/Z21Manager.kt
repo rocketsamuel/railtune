@@ -41,6 +41,17 @@ class Z21Manager(private val context: Context) {
     private val _z21Status = MutableStateFlow("Bereit (${_z21Ip.value})")
     val z21Status: StateFlow<String> = _z21Status.asStateFlow()
 
+    private val _isZ21Online = MutableStateFlow(false)
+    val isZ21Online: StateFlow<Boolean> = _isZ21Online.asStateFlow()
+    private val _isEmergencyStopActive = MutableStateFlow(false)
+    val isEmergencyStopActive: StateFlow<Boolean> = _isEmergencyStopActive.asStateFlow()
+    private val _isEmergencyStopPending = MutableStateFlow(false)
+    val isEmergencyStopPending: StateFlow<Boolean> = _isEmergencyStopPending.asStateFlow()
+    private val _isEmergencyReleasePending = MutableStateFlow(false)
+    val isEmergencyReleasePending: StateFlow<Boolean> = _isEmergencyReleasePending.asStateFlow()
+    private var emergencyStopTimeoutJob: Job? = null
+    @Volatile private var lastZ21ResponseAt = 0L
+
     private val _cvResult = MutableStateFlow<CvResult?>(null)
     val cvResult: StateFlow<CvResult?> = _cvResult.asStateFlow()
 
@@ -69,6 +80,12 @@ class Z21Manager(private val context: Context) {
     fun setZ21Ip(ip: String) {
         val trimmed = ip.trim()
         if (trimmed.isNotBlank()) {
+            _isZ21Online.value = false
+            _isEmergencyStopActive.value = false
+            _isEmergencyStopPending.value = false
+            _isEmergencyReleasePending.value = false
+            emergencyStopTimeoutJob?.cancel()
+            lastZ21ResponseAt = 0L
             _z21Ip.value = trimmed
             prefs.edit().putString(KEY_Z21_IP, trimmed).apply()
             _z21Status.value = "Bereit ($trimmed)"
@@ -96,8 +113,8 @@ class Z21Manager(private val context: Context) {
     fun pingZ21() {
         scope.launch {
             _z21Status.value = "Sende Ping an z21 (${_z21Ip.value})..."
-            // LAN_GET_SERIAL_NUMBER: 0x08 0x00 0x10 0x00
-            val packetData = byteArrayOf(0x08.toByte(), 0x00.toByte(), 0x10.toByte(), 0x00.toByte())
+            // LAN_GET_SERIAL_NUMBER: 0x04 0x00 0x10 0x00
+            val packetData = byteArrayOf(0x04.toByte(), 0x00.toByte(), 0x10.toByte(), 0x00.toByte())
             sendUdpPacket(packetData)
         }
     }
@@ -121,6 +138,10 @@ class Z21Manager(private val context: Context) {
             while (isActive) {
                 delay(2000)
                 subscribeBroadcastFlags()
+                sendUdpPacket(byteArrayOf(0x07, 0x00, 0x40, 0x00, 0x21, 0x24, 0x05))
+                if (lastZ21ResponseAt == 0L || SystemClock.elapsedRealtime() - lastZ21ResponseAt > 6_000L) {
+                    _isZ21Online.value = false
+                }
             }
         }
     }
@@ -159,9 +180,18 @@ class Z21Manager(private val context: Context) {
             while (isActive) {
                 try {
                     val socket = udpSocket ?: break
+                    packet.length = buffer.size
                     socket.receive(packet)
+                    if (packet.port != Z21_PORT || packet.address != InetAddress.getByName(_z21Ip.value)) continue
                     val receivedBytes = packet.data.copyOf(packet.length)
-                    parseZ21Packet(receivedBytes)
+                    var offset = 0
+                    while (offset + 4 <= receivedBytes.size) {
+                        val length = (receivedBytes[offset].toInt() and 0xFF) or
+                            ((receivedBytes[offset + 1].toInt() and 0xFF) shl 8)
+                        if (length < 4 || offset + length > receivedBytes.size) break
+                        parseZ21Packet(receivedBytes.copyOfRange(offset, offset + length))
+                        offset += length
+                    }
                 } catch (e: Exception) {
                     if (!isActive) break
                     Log.w(TAG, "UDP Empfangsfehler", e)
@@ -175,6 +205,13 @@ class Z21Manager(private val context: Context) {
         if (bytes.size < 4) return
         val length = (bytes[0].toInt() and 0xFF) or ((bytes[1].toInt() and 0xFF) shl 8)
         val headerId = (bytes[2].toInt() and 0xFF) or ((bytes[3].toInt() and 0xFF) shl 8)
+
+        if (length != bytes.size) return
+        if (headerId == 0x0040) {
+            if (length < 6 || bytes.drop(4).fold(0) { xor, byte -> xor xor (byte.toInt() and 0xFF) } != 0) return
+        }
+        lastZ21ResponseAt = SystemClock.elapsedRealtime()
+        _isZ21Online.value = true
 
         Log.d(TAG, "Z21 UDP Paket empfangen: Len=$length, Header=0x${headerId.toString(16)} Hex: ${bytes.joinToString(" ") { "%02X".format(it) }}")
 
@@ -241,6 +278,38 @@ class Z21Manager(private val context: Context) {
         if (headerId == 0x0040 && bytes.size >= 5) {
             val xHeader = bytes[4].toInt() and 0xFF
 
+            // LAN_X_STATUS_CHANGED: CentralState bit 0 indicates global emergency stop.
+            if (xHeader == 0x62 && bytes.size >= 8 && (bytes[5].toInt() and 0xFF) == 0x22) {
+                if ((bytes[6].toInt() and 0x01) != 0) {
+                    confirmEmergencyStop()
+                } else {
+                    confirmEmergencyStopReleased()
+                }
+                return
+            }
+
+            // LAN_X_BC_STOPPED: confirmed global emergency stop, track power stays on.
+            if (xHeader == 0x81 && bytes.size == 7 && bytes[5] == 0.toByte()) {
+                confirmEmergencyStop()
+                return
+            }
+
+            // Track power broadcasts also arrive after another controller changes power.
+            if (xHeader == 0x61 && bytes.size >= 7) {
+                when (bytes[5].toInt() and 0xFF) {
+                    0x00 -> {
+                        _locoStates.value = _locoStates.value.mapValues { (_, state) -> state.copy(speedPercent = 0f) }
+                        _z21Status.value = "Gleisspannung AUS – alle Loks angehalten"
+                        return
+                    }
+                    0x01 -> {
+                        confirmEmergencyStopReleased()
+                        _z21Status.value = "Gleisspannung EIN"
+                        return
+                    }
+                }
+            }
+
             // LAN_X_LOCO_INFO (speed/direction and function groups)
             if (xHeader == 0xEF && bytes.size >= 14 && length <= bytes.size) {
                 val addressHigh = bytes[5].toInt() and 0x3F
@@ -288,7 +357,8 @@ class Z21Manager(private val context: Context) {
                     message = "CV $cvNum erfolgreich gelesen: $cvValue"
                 )
                 _z21Status.value = "CV $cvNum gelesen: $cvValue"
-            } else if (xHeader == 0x61) {
+            } else if (xHeader == 0x61 && bytes.size >= 7 &&
+                (bytes[5].toInt() and 0xFF) in listOf(0x12, 0x13)) {
                 // LAN_X_CV_NACK (Fehler beim CV-Lesen/Schreiben)
                 val errCode = bytes[5].toInt() and 0xFF
                 _isCvBusy.value = false
@@ -446,6 +516,60 @@ class Z21Manager(private val context: Context) {
         }
     }
 
+    private fun confirmEmergencyStop() {
+        if (!_isEmergencyReleasePending.value) {
+            emergencyStopTimeoutJob?.cancel()
+            _isEmergencyStopPending.value = false
+        }
+        _isEmergencyStopActive.value = true
+        _locoStates.value = _locoStates.value.mapValues { (_, state) -> state.copy(speedPercent = 0f) }
+        _z21Status.value = "Not-Aus bestätigt – alle Loks angehalten"
+    }
+
+    private fun confirmEmergencyStopReleased() {
+        _isEmergencyStopActive.value = false
+        if (_isEmergencyReleasePending.value) {
+            emergencyStopTimeoutJob?.cancel()
+            _isEmergencyReleasePending.value = false
+            _isEmergencyStopPending.value = false
+            _z21Status.value = "Not-Aus aufgehoben"
+        }
+    }
+
+    fun releaseEmergencyStop() {
+        if (!_isEmergencyStopActive.value || _isEmergencyStopPending.value) return
+        _isEmergencyReleasePending.value = true
+        _isEmergencyStopPending.value = true
+        emergencyStopTimeoutJob?.cancel()
+        emergencyStopTimeoutJob = scope.launch {
+            delay(6_000L)
+            _isEmergencyStopPending.value = false
+            _isEmergencyReleasePending.value = false
+            _z21Status.value = "Freigabe nicht bestätigt – Verbindung prüfen"
+        }
+        scope.launch {
+            _z21Status.value = "Not-Aus-Freigabe angefordert"
+            // LAN_X_SET_TRACK_POWER_ON also releases the global emergency stop.
+            sendUdpPacket(byteArrayOf(0x07, 0x00, 0x40, 0x00, 0x21, 0x81.toByte(), 0xA0.toByte()))
+        }
+    }
+
+    /** LAN_X_SET_STOP stops all locomotives while leaving track voltage on. */
+    fun emergencyStop() {
+        _isEmergencyReleasePending.value = false
+        _isEmergencyStopPending.value = true
+        emergencyStopTimeoutJob?.cancel()
+        emergencyStopTimeoutJob = scope.launch {
+            delay(6_000L)
+            _isEmergencyStopPending.value = false
+            _z21Status.value = "Not-Aus nicht bestätigt – Verbindung prüfen"
+        }
+        scope.launch {
+            _z21Status.value = "Not-Aus angefordert – warte auf z21"
+            sendUdpPacket(byteArrayOf(0x06, 0x00, 0x40, 0x00, 0x80.toByte(), 0x80.toByte()))
+        }
+    }
+
     fun setTrackPower(on: Boolean) {
         scope.launch {
             val packetData = if (on) {
@@ -454,7 +578,7 @@ class Z21Manager(private val context: Context) {
                 byteArrayOf(0x07, 0x00, 0x40, 0x00, 0x21, 0x80.toByte(), 0xA1.toByte())
             }
             sendUdpPacket(packetData)
-            _z21Status.value = if (on) "Gleisspannung EIN" else "Gleisspannung AUS / NOT-AUS"
+            _z21Status.value = if (on) "Gleisspannung EIN" else "Gleisspannung AUS"
         }
     }
 

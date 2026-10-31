@@ -37,6 +37,10 @@ class BleViewModel(application: Application) : AndroidViewModel(application) {
 
     // z21 & CV States
     val z21Ip: StateFlow<String> = z21Manager.z21Ip
+    val isZ21Online = z21Manager.isZ21Online
+    val isEmergencyStopActive = z21Manager.isEmergencyStopActive
+    val isEmergencyStopPending = z21Manager.isEmergencyStopPending
+    val isEmergencyReleasePending = z21Manager.isEmergencyReleasePending
     val z21Status: StateFlow<String> = z21Manager.z21Status
     val cvResult: StateFlow<CvResult?> = z21Manager.cvResult
     val isCvBusy: StateFlow<Boolean> = z21Manager.isCvBusy
@@ -150,6 +154,14 @@ class BleViewModel(application: Application) : AndroidViewModel(application) {
         if (connectionState.value is ConnectionState.Connected) {
             bleManager.writeText("LOCO:$locoAddress;FUNC:F$functionNum:${if (state) "ON" else "OFF"}")
         }
+    }
+
+    fun releaseEmergencyStop() {
+        z21Manager.releaseEmergencyStop()
+    }
+
+    fun emergencyStop() {
+        z21Manager.emergencyStop()
     }
 
     fun setTrackPower(on: Boolean) {
