@@ -37,6 +37,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
@@ -45,6 +46,7 @@ import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.graphics.vector.path
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalConfiguration
@@ -52,6 +54,7 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -1150,6 +1153,34 @@ private fun DccFunctions.toInputs() = DccFunctionInputs(
     engineRoomLight = engineRoomLight?.toString().orEmpty()
 )
 
+private val HighBeamIcon: ImageVector = ImageVector.Builder(
+    name = "HighBeam",
+    defaultWidth = 24.dp,
+    defaultHeight = 24.dp,
+    viewportWidth = 24f,
+    viewportHeight = 24f
+).apply {
+    path(
+        stroke = androidx.compose.ui.graphics.SolidColor(Color.Black),
+        strokeLineWidth = 1.8f,
+        strokeLineCap = StrokeCap.Round
+    ) {
+        // Headlamp with parallel, horizontal beams for high beam.
+        moveTo(13f, 5f)
+        lineTo(13f, 19f)
+        curveTo(23f, 19f, 23f, 5f, 13f, 5f)
+        close()
+        moveTo(3f, 5f)
+        lineTo(9f, 5f)
+        moveTo(3f, 9.7f)
+        lineTo(9f, 9.7f)
+        moveTo(3f, 14.3f)
+        lineTo(9f, 14.3f)
+        moveTo(3f, 19f)
+        lineTo(9f, 19f)
+    }
+}.build()
+
 private data class DccFunctionDefinition(
     val label: String,
     val icon: ImageVector,
@@ -1157,6 +1188,7 @@ private data class DccFunctionDefinition(
     val momentary: Boolean = false
 )
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun DccFunctionNumberField(
     label: String,
@@ -1171,16 +1203,32 @@ private fun DccFunctionNumberField(
     ) {
         Icon(icon, contentDescription = null, modifier = Modifier.size(22.dp))
         Text(label, modifier = Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
-        OutlinedTextField(
+        val interactionSource = remember { MutableInteractionSource() }
+        BasicTextField(
             value = value,
             onValueChange = { input ->
                 if (input.all(Char::isDigit) && input.length <= 2) onValueChange(input)
             },
-            label = { Text("F-Taste") },
-            placeholder = { Text("–") },
             singleLine = true,
+            textStyle = MaterialTheme.typography.bodyLarge.copy(color = MaterialTheme.colorScheme.onSurface),
+            cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
+            interactionSource = interactionSource,
             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-            modifier = Modifier.width(104.dp)
+            modifier = Modifier.width(104.dp).padding(top = 8.dp),
+            decorationBox = { innerTextField ->
+                OutlinedTextFieldDefaults.DecorationBox(
+                    value = value,
+                    innerTextField = innerTextField,
+                    enabled = true,
+                    singleLine = true,
+                    visualTransformation = androidx.compose.ui.text.input.VisualTransformation.None,
+                    interactionSource = interactionSource,
+                    label = { Text("F-Taste") },
+                    placeholder = { Text("–") },
+                    // Default outlined padding is 16 dp; reduce both vertical edges by 4 dp.
+                    contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp)
+                )
+            }
         )
     }
 }
@@ -1193,15 +1241,15 @@ private fun DccFunctionAssignmentsEditor(
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Text("F-Taste eintragen (0–63); leere Felder blenden die Funktion aus.", style = MaterialTheme.typography.bodySmall)
         DccFunctionNumberField("Licht", Icons.Default.Lightbulb, values.light) { onValuesChange(values.copy(light = it)) }
+        DccFunctionNumberField("Fernlicht", HighBeamIcon, values.highBeam) { onValuesChange(values.copy(highBeam = it)) }
         DccFunctionNumberField("Sound", Icons.Default.VolumeUp, values.sound) { onValuesChange(values.copy(sound = it)) }
         DccFunctionNumberField("Horn hoch", Icons.Default.Campaign, values.hornHigh) { onValuesChange(values.copy(hornHigh = it)) }
         DccFunctionNumberField("Horn tief", Icons.Default.Campaign, values.hornLow) { onValuesChange(values.copy(hornLow = it)) }
         DccFunctionNumberField("Führerstand Beleuchtung", Icons.Default.WbIncandescent, values.cabLight) { onValuesChange(values.copy(cabLight = it)) }
         DccFunctionNumberField("Zg1/2 aus Fst 1", Icons.Default.LooksOne, values.zg12Fst1) { onValuesChange(values.copy(zg12Fst1 = it)) }
         DccFunctionNumberField("Zg1/2 aus Fst 2", Icons.Default.LooksTwo, values.zg12Fst2) { onValuesChange(values.copy(zg12Fst2 = it)) }
-        DccFunctionNumberField("Fernlicht", Icons.Default.FlashOn, values.highBeam) { onValuesChange(values.copy(highBeam = it)) }
         DccFunctionNumberField("Rangierfahrt", Icons.Default.SwapHoriz, values.shunting) { onValuesChange(values.copy(shunting = it)) }
-        DccFunctionNumberField("Maschinenraumbeleuchtung", Icons.Default.WbIncandescent, values.engineRoomLight) { onValuesChange(values.copy(engineRoomLight = it)) }
+        DccFunctionNumberField("Maschinenraum Beleuchtung", Icons.Default.WbIncandescent, values.engineRoomLight) { onValuesChange(values.copy(engineRoomLight = it)) }
     }
 }
 
@@ -1742,15 +1790,15 @@ fun DrivingScreen(
             item {
                 val functions = listOf(
                     DccFunctionDefinition("Licht", Icons.Default.Lightbulb, loco.dccFunctions.light),
+                    DccFunctionDefinition("Fernlicht", HighBeamIcon, loco.dccFunctions.highBeam),
                     DccFunctionDefinition("Sound", Icons.Default.VolumeUp, loco.dccFunctions.sound),
                     DccFunctionDefinition("Horn hoch", Icons.Default.Campaign, loco.dccFunctions.hornHigh, momentary = true),
                     DccFunctionDefinition("Horn tief", Icons.Default.Campaign, loco.dccFunctions.hornLow, momentary = true),
                     DccFunctionDefinition("Führerstand Beleuchtung", Icons.Default.WbIncandescent, loco.dccFunctions.cabLight),
                     DccFunctionDefinition("Zg1/2 aus Fst 1", Icons.Default.LooksOne, loco.dccFunctions.zg12Fst1),
                     DccFunctionDefinition("Zg1/2 aus Fst 2", Icons.Default.LooksTwo, loco.dccFunctions.zg12Fst2),
-                    DccFunctionDefinition("Fernlicht", Icons.Default.FlashOn, loco.dccFunctions.highBeam),
                     DccFunctionDefinition("Rangierfahrt", Icons.Default.SwapHoriz, loco.dccFunctions.shunting),
-                    DccFunctionDefinition("Maschinenraumbeleuchtung", Icons.Default.WbIncandescent, loco.dccFunctions.engineRoomLight)
+                    DccFunctionDefinition("Maschinenraum Beleuchtung", Icons.Default.WbIncandescent, loco.dccFunctions.engineRoomLight)
                 ).filter { it.functionNumber != null }
                 Card(
                     modifier = Modifier.fillMaxWidth(),
