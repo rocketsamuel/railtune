@@ -223,7 +223,7 @@ fun MainScreen(viewModel: BleViewModel) {
                             else -> Color(0xFF00E676)
                         }
                         Column(verticalArrangement = Arrangement.spacedBy(1.dp)) {
-                            Text("z21", fontSize = 11.sp, lineHeight = 12.sp, fontWeight = FontWeight.Bold)
+                            Text("z21", fontSize = 13.sp, lineHeight = 14.sp, fontWeight = FontWeight.Bold)
                             Row(
                                 horizontalArrangement = Arrangement.spacedBy(5.dp),
                                 verticalAlignment = Alignment.CenterVertically
