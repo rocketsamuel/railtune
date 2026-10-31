@@ -1394,15 +1394,22 @@ private fun dccFunctionChipColors() = FilterChipDefaults.filterChipColors(
 )
 
 @Composable
-private fun dccFunctionChipBorder(selected: Boolean): BorderStroke? =
-    FilterChipDefaults.filterChipBorder(
-        enabled = true,
-        selected = selected,
-        borderColor = Color(0xFF2A3A50),
-        selectedBorderColor = Color(0xFF52CBFF),
-        borderWidth = 1.dp,
-        selectedBorderWidth = 2.dp
-    )
+private fun dccFunctionChipBorder(): BorderStroke = BorderStroke(1.dp, Color(0xFF2A3A50))
+
+@Composable
+private fun DccFunctionIcon(function: DccFunctionDefinition, active: Boolean) {
+    // Keep icon dimensions while reducing each horizontal inset by 4 dp.
+    Box(modifier = Modifier.width(16.dp).height(26.dp), contentAlignment = Alignment.BottomCenter) {
+        Box(modifier = Modifier.requiredSize(24.dp), contentAlignment = Alignment.TopCenter) {
+            Icon(function.icon, contentDescription = function.label, modifier = Modifier.size(20.dp))
+            Box(
+                modifier = Modifier.align(Alignment.BottomCenter)
+                    .width(16.dp).height(2.dp)
+                    .background(if (active) Color(0xFFEAF1FC) else Color.Transparent, RoundedCornerShape(1.dp))
+            )
+        }
+    }
+}
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
@@ -1870,7 +1877,7 @@ fun DrivingScreen(
             }
             }
 
-            // Lok Funktionen Card
+            // Lok Funktionen
             item {
                 val functions = listOf(
                     DccFunctionDefinition("Licht", Icons.Default.Lightbulb, loco.dccFunctions.light),
@@ -1884,71 +1891,66 @@ fun DrivingScreen(
                     DccFunctionDefinition("Rangierfahrt", Icons.Default.SwapHoriz, loco.dccFunctions.shunting),
                     DccFunctionDefinition("Maschinenraum Beleuchtung", Icons.Default.WbIncandescent, loco.dccFunctions.engineRoomLight)
                 ).filter { it.functionNumber != null }
-                Card(
+                Column(
                     modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(10.dp),
-                    border = BorderStroke(1.dp, Color(0xFF26364E)),
-                    colors = CardDefaults.cardColors(
-                        containerColor = MaterialTheme.colorScheme.surfaceVariant
-                    )
+                    horizontalAlignment = Alignment.Start,
+                    verticalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
-                    Column(
-                        modifier = Modifier.padding(16.dp),
-                        verticalArrangement = Arrangement.spacedBy(12.dp)
-                    ) {
-                        Text(
-                            text = "LOK FUNKTIONEN (DCC)",
-                            style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.Bold
-                        )
+                    Text(
+                        text = "LOK FUNKTIONEN (DCC)",
+                        color = Color.White,
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold
+                    )
 
-                        FlowRow(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(8.dp),
-                            verticalArrangement = Arrangement.spacedBy(8.dp)
-                        ) {
-                            functions.forEach { function ->
-                                val functionNumber = function.functionNumber ?: return@forEach
-                                val isOn = functionNumber in activeDccFunctionNumbers
-                                if (function.momentary) {
-                                    val interactionSource = remember(loco.address, functionNumber) {
-                                        MutableInteractionSource()
-                                    }
-                                    LaunchedEffect(loco.address, functionNumber, interactionSource) {
-                                        interactionSource.interactions.collect { interaction ->
-                                            when (interaction) {
-                                                is PressInteraction.Press -> onSetLocoFunction(loco.address, functionNumber, true)
-                                                is PressInteraction.Release,
-                                                is PressInteraction.Cancel -> onSetLocoFunction(loco.address, functionNumber, false)
-                                                else -> Unit
-                                            }
+                    FlowRow(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        functions.forEach { function ->
+                            val functionNumber = function.functionNumber ?: return@forEach
+                            val isOn = functionNumber in activeDccFunctionNumbers
+                            if (function.momentary) {
+                                val interactionSource = remember(loco.address, functionNumber) {
+                                    MutableInteractionSource()
+                                }
+                                LaunchedEffect(loco.address, functionNumber, interactionSource) {
+                                    interactionSource.interactions.collect { interaction ->
+                                        when (interaction) {
+                                            is PressInteraction.Press -> onSetLocoFunction(loco.address, functionNumber, true)
+                                            is PressInteraction.Release,
+                                            is PressInteraction.Cancel -> onSetLocoFunction(loco.address, functionNumber, false)
+                                            else -> Unit
                                         }
                                     }
-                                    FilterChip(
-                                        selected = isOn,
-                                        onClick = {},
-                                        interactionSource = interactionSource,
-                                        label = { Icon(function.icon, contentDescription = function.label) },
-                                        colors = dccFunctionChipColors(),
-                                        border = dccFunctionChipBorder(isOn)
-                                    )
-                                } else {
-                                    FilterChip(
-                                        selected = isOn,
-                                        onClick = {
-                                            val nextState = !isOn
-                                            activeDccFunctionNumbers = if (nextState) {
-                                                activeDccFunctionNumbers + functionNumber
-                                            } else {
-                                                activeDccFunctionNumbers - functionNumber
-                                            }
-                                            onSetLocoFunction(loco.address, functionNumber, nextState)
-                                        },
-                                        label = { Icon(function.icon, contentDescription = function.label) },
-                                        colors = dccFunctionChipColors(),
-                                        border = dccFunctionChipBorder(isOn)
-                                    )
                                 }
+                                FilterChip(
+                                    modifier = Modifier.height(34.dp),
+                                    selected = isOn,
+                                    onClick = {},
+                                    interactionSource = interactionSource,
+                                    label = { DccFunctionIcon(function, isOn) },
+                                    colors = dccFunctionChipColors(),
+                                    border = dccFunctionChipBorder()
+                                )
+                            } else {
+                                FilterChip(
+                                    modifier = Modifier.height(34.dp),
+                                    selected = isOn,
+                                    onClick = {
+                                        val nextState = !isOn
+                                        activeDccFunctionNumbers = if (nextState) {
+                                            activeDccFunctionNumbers + functionNumber
+                                        } else {
+                                            activeDccFunctionNumbers - functionNumber
+                                        }
+                                        onSetLocoFunction(loco.address, functionNumber, nextState)
+                                    },
+                                    label = { DccFunctionIcon(function, isOn) },
+                                    colors = dccFunctionChipColors(),
+                                    border = dccFunctionChipBorder()
+                                )
                             }
                         }
                     }
