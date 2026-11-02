@@ -2304,7 +2304,7 @@ private fun VehicleOverview(
     onToggleFavorite: (Loco) -> Unit
 ) {
     androidx.activity.compose.BackHandler(onBack = onBack)
-    val columnCount = if (LocalConfiguration.current.screenWidthDp >= 600) 4 else 3
+    val columnCount = if (LocalConfiguration.current.screenWidthDp >= 600) 8 else 3
     var query by rememberSaveable { mutableStateOf("") }
     var filter by rememberSaveable { mutableIntStateOf(0) }
     val sorted = remember(locos) { locos.sortedBy { it.name.lowercase(Locale.ROOT) } }
@@ -2392,7 +2392,7 @@ private fun VehicleOverviewCard(
     ) {
         Box(Modifier.fillMaxWidth()) {
         Column(Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 6.dp)) {
-            Box(Modifier.fillMaxWidth().height(66.dp)) {
+            Box(Modifier.fillMaxWidth().height(68.dp)) {
                 val illustration = locoIllustrationResource(loco.illustrationId)
                 if (illustration != null) {
                     Image(painterResource(illustration), contentDescription = null,
