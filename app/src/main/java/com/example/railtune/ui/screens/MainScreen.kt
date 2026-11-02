@@ -2304,6 +2304,7 @@ private fun VehicleOverview(
     onToggleFavorite: (Loco) -> Unit
 ) {
     androidx.activity.compose.BackHandler(onBack = onBack)
+    val columnCount = if (LocalConfiguration.current.screenWidthDp >= 600) 4 else 3
     var query by rememberSaveable { mutableStateOf("") }
     var filter by rememberSaveable { mutableIntStateOf(0) }
     val sorted = remember(locos) { locos.sortedBy { it.name.lowercase(Locale.ROOT) } }
@@ -2359,7 +2360,7 @@ private fun VehicleOverview(
         } else {
             key(filter, query) {
                 LazyVerticalGrid(
-                    columns = GridCells.Fixed(3),
+                    columns = GridCells.Fixed(columnCount),
                     modifier = Modifier.weight(1f).fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(10.dp),
                     verticalArrangement = Arrangement.spacedBy(10.dp),
