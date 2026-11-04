@@ -666,7 +666,8 @@ class Z21Manager(private val context: Context) {
                     it.dccFunctions.zg12Fst2,
                     it.dccFunctions.highBeam,
                     it.dccFunctions.shunting,
-                    it.dccFunctions.engineRoomLight
+                    it.dccFunctions.engineRoomLight,
+                    it.dccFunctions.doors
                 ).joinToString(",") { functionNumber -> functionNumber?.toString().orEmpty() } +
                 "|${it.railcomMultiplier}"
         }
@@ -712,7 +713,8 @@ class Z21Manager(private val context: Context) {
                                 zg12Fst2 = dccFunctions.getOrNull(6)?.toIntOrNull(),
                                 highBeam = dccFunctions.getOrNull(7)?.toIntOrNull(),
                                 shunting = dccFunctions.getOrNull(8)?.toIntOrNull(),
-                                engineRoomLight = dccFunctions.getOrNull(9)?.toIntOrNull()
+                                engineRoomLight = dccFunctions.getOrNull(9)?.toIntOrNull(),
+                                doors = dccFunctions.getOrNull(10)?.toIntOrNull()
                             ),
                             railcomMultiplier = parts.getOrNull(9)?.toFloatOrNull()?.coerceAtLeast(0f) ?: 1f
                         )

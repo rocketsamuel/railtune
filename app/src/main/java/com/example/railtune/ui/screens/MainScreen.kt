@@ -1205,9 +1205,10 @@ private data class DccFunctionInputs(
     val zg12Fst2: String = "",
     val highBeam: String = "",
     val shunting: String = "",
-    val engineRoomLight: String = ""
+    val engineRoomLight: String = "",
+    val doors: String = ""
 ) {
-    fun isValid(): Boolean = listOf(light, sound, hornHigh, hornLow, cabLight, zg12Fst1, zg12Fst2, highBeam, shunting, engineRoomLight)
+    fun isValid(): Boolean = listOf(light, sound, hornHigh, hornLow, cabLight, zg12Fst1, zg12Fst2, highBeam, shunting, engineRoomLight, doors)
         .all { value -> value.isBlank() || value.toIntOrNull()?.let { it in 0..63 } == true }
 
     fun toDccFunctions() = DccFunctions(
@@ -1220,7 +1221,8 @@ private data class DccFunctionInputs(
         zg12Fst2 = zg12Fst2.toIntOrNull(),
         highBeam = highBeam.toIntOrNull(),
         shunting = shunting.toIntOrNull(),
-        engineRoomLight = engineRoomLight.toIntOrNull()
+        engineRoomLight = engineRoomLight.toIntOrNull(),
+        doors = doors.toIntOrNull()
     )
 }
 
@@ -1234,7 +1236,8 @@ private fun DccFunctions.toInputs() = DccFunctionInputs(
     zg12Fst2 = zg12Fst2?.toString().orEmpty(),
     highBeam = highBeam?.toString().orEmpty(),
     shunting = shunting?.toString().orEmpty(),
-    engineRoomLight = engineRoomLight?.toString().orEmpty()
+    engineRoomLight = engineRoomLight?.toString().orEmpty(),
+    doors = doors?.toString().orEmpty()
 )
 
 private val HighBeamIcon: ImageVector = ImageVector.Builder(
@@ -1262,6 +1265,34 @@ private val HighBeamIcon: ImageVector = ImageVector.Builder(
         lineTo(9f, 14.3f)
         moveTo(3f, 19f)
         lineTo(9f, 19f)
+    }
+}.build()
+
+private val SlidingDoorsIcon: ImageVector = ImageVector.Builder(
+    name = "SlidingDoors",
+    defaultWidth = 24.dp,
+    defaultHeight = 24.dp,
+    viewportWidth = 24f,
+    viewportHeight = 24f
+).apply {
+    path(
+        stroke = androidx.compose.ui.graphics.SolidColor(Color.Black),
+        strokeLineWidth = 1.6f,
+        strokeLineCap = StrokeCap.Round
+    ) {
+        // A single train door with a window and recessed handle.
+        moveTo(6f, 21f)
+        lineTo(6f, 3f)
+        lineTo(18f, 3f)
+        lineTo(18f, 21f)
+        close()
+        moveTo(9f, 6f)
+        lineTo(15f, 6f)
+        lineTo(15f, 12f)
+        lineTo(9f, 12f)
+        close()
+        moveTo(15f, 15f)
+        lineTo(15f, 17f)
     }
 }.build()
 
@@ -1334,6 +1365,7 @@ private fun DccFunctionAssignmentsEditor(
         DccFunctionNumberField("Zg1/2 aus Fst 2", Icons.Default.LooksTwo, values.zg12Fst2) { onValuesChange(values.copy(zg12Fst2 = it)) }
         DccFunctionNumberField("Rangierfahrt", Icons.Default.SwapHoriz, values.shunting) { onValuesChange(values.copy(shunting = it)) }
         DccFunctionNumberField("Maschinenraum Beleuchtung", Icons.Default.WbIncandescent, values.engineRoomLight) { onValuesChange(values.copy(engineRoomLight = it)) }
+        DccFunctionNumberField("Türen öffnen/schließen", SlidingDoorsIcon, values.doors) { onValuesChange(values.copy(doors = it)) }
     }
 }
 
@@ -1950,7 +1982,8 @@ fun DrivingScreen(
                     DccFunctionDefinition("Zg1/2 aus Fst 1", Icons.Default.LooksOne, loco.dccFunctions.zg12Fst1),
                     DccFunctionDefinition("Zg1/2 aus Fst 2", Icons.Default.LooksTwo, loco.dccFunctions.zg12Fst2),
                     DccFunctionDefinition("Rangierfahrt", Icons.Default.SwapHoriz, loco.dccFunctions.shunting),
-                    DccFunctionDefinition("Maschinenraum Beleuchtung", Icons.Default.WbIncandescent, loco.dccFunctions.engineRoomLight)
+                    DccFunctionDefinition("Maschinenraum Beleuchtung", Icons.Default.WbIncandescent, loco.dccFunctions.engineRoomLight),
+                    DccFunctionDefinition("Türen öffnen/schließen", SlidingDoorsIcon, loco.dccFunctions.doors, momentary = true)
                 ).filter { it.functionNumber != null }
                 Column(
                     modifier = Modifier.fillMaxWidth(),
@@ -1973,13 +2006,29 @@ fun DrivingScreen(
                             val functionNumber = function.functionNumber ?: return@forEach
                             val isOn = functionNumber in activeDccFunctionNumbers
                             if (function.momentary) {
+                                var visuallyPressed by remember(loco.address, functionNumber) {
+                                    mutableStateOf(false)
+                                }
+                                var pressSequence by remember(loco.address, functionNumber) {
+                                    mutableIntStateOf(0)
+                                }
+                                LaunchedEffect(loco.address, functionNumber, pressSequence) {
+                                    if (pressSequence != 0) {
+                                        delay(1000)
+                                        visuallyPressed = false
+                                    }
+                                }
                                 val interactionSource = remember(loco.address, functionNumber) {
                                     MutableInteractionSource()
                                 }
                                 LaunchedEffect(loco.address, functionNumber, interactionSource) {
                                     interactionSource.interactions.collect { interaction ->
                                         when (interaction) {
-                                            is PressInteraction.Press -> controlFunction(loco.address, functionNumber, true)
+                                            is PressInteraction.Press -> {
+                                                visuallyPressed = true
+                                                pressSequence++
+                                                controlFunction(loco.address, functionNumber, true)
+                                            }
                                             is PressInteraction.Release,
                                             is PressInteraction.Cancel -> controlFunction(loco.address, functionNumber, false)
                                             else -> Unit
@@ -1988,10 +2037,10 @@ fun DrivingScreen(
                                 }
                                 FilterChip(
                                     modifier = Modifier.height(34.dp),
-                                    selected = isOn,
+                                    selected = visuallyPressed,
                                     onClick = {},
                                     interactionSource = interactionSource,
-                                    label = { DccFunctionIcon(function, isOn) },
+                                    label = { DccFunctionIcon(function, visuallyPressed) },
                                     colors = dccFunctionChipColors(),
                                     border = dccFunctionChipBorder()
                                 )

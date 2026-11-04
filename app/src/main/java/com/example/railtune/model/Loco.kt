@@ -25,7 +25,8 @@ data class DccFunctions(
     val zg12Fst2: Int? = null,
     val highBeam: Int? = null,
     val shunting: Int? = null,
-    val engineRoomLight: Int? = null
+    val engineRoomLight: Int? = null,
+    val doors: Int? = null
 )
 
 data class CvResult(

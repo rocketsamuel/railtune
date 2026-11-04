@@ -34,6 +34,7 @@ object LocoTransfer {
                         putNullable("highBeam", loco.dccFunctions.highBeam)
                         putNullable("shunting", loco.dccFunctions.shunting)
                         putNullable("engineRoomLight", loco.dccFunctions.engineRoomLight)
+                        putNullable("doors", loco.dccFunctions.doors)
                     })
                 })
             }
@@ -67,7 +68,8 @@ object LocoTransfer {
                     zg12Fst2 = functions.intOrNull("zg12Fst2"),
                     highBeam = functions.intOrNull("highBeam"),
                     shunting = functions.intOrNull("shunting"),
-                    engineRoomLight = functions.intOrNull("engineRoomLight")
+                    engineRoomLight = functions.intOrNull("engineRoomLight"),
+                    doors = functions.intOrNull("doors")
                 )
             )
         }
