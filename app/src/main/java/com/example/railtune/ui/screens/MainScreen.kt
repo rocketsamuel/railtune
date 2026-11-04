@@ -2579,6 +2579,7 @@ fun DeviceScanListView(
     lastConnectedAddress: String?,
     onConnect: (BleDevice) -> Unit
 ) {
+    val visibleDevices = devices.filter { it.rssi > -90 }
     Column(
         modifier = Modifier.fillMaxWidth(),
         verticalArrangement = Arrangement.spacedBy(8.dp)
@@ -2589,7 +2590,7 @@ fun DeviceScanListView(
             verticalAlignment = Alignment.CenterVertically
         ) {
             Text(
-                text = "Gefundene BLE Geräte (${devices.size})",
+                text = "Gefundene BLE Geräte (${visibleDevices.size})",
                 style = MaterialTheme.typography.titleMedium
             )
             if (isScanning) {
@@ -2597,7 +2598,7 @@ fun DeviceScanListView(
             }
         }
 
-        if (devices.isEmpty()) {
+        if (visibleDevices.isEmpty()) {
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -2619,7 +2620,7 @@ fun DeviceScanListView(
                 verticalArrangement = Arrangement.spacedBy(8.dp),
                 modifier = Modifier.fillMaxHeight()
             ) {
-                items(devices, key = { it.address }) { device ->
+                items(visibleDevices, key = { it.address }) { device ->
                     val isSavedDevice = !lastConnectedAddress.isNullOrEmpty() &&
                             device.address.equals(lastConnectedAddress, ignoreCase = true)
                     DeviceItemCard(
