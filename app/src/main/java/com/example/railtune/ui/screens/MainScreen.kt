@@ -1038,6 +1038,7 @@ private fun DecoderManufacturerDropdown(
     Box(modifier = Modifier.fillMaxWidth()) {
         OutlinedButton(
             onClick = { expanded = true },
+            shape = MaterialTheme.shapes.extraSmall,
             modifier = Modifier.fillMaxWidth()
         ) {
             Row(
@@ -1135,6 +1136,7 @@ private fun LocoIllustrationDropdown(
     Box(modifier = Modifier.fillMaxWidth()) {
         OutlinedButton(
             onClick = { expanded = true },
+            shape = MaterialTheme.shapes.extraSmall,
             modifier = Modifier.fillMaxWidth()
         ) {
             Row(
@@ -1351,21 +1353,25 @@ private fun DccFunctionNumberField(
 @Composable
 private fun DccFunctionAssignmentsEditor(
     values: DccFunctionInputs,
+    soundOnly: Boolean,
     onValuesChange: (DccFunctionInputs) -> Unit
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Text("F-Taste eintragen (0–63); leere Felder blenden die Funktion aus.", style = MaterialTheme.typography.bodySmall)
-        DccFunctionNumberField("Licht", Icons.Default.Lightbulb, values.light) { onValuesChange(values.copy(light = it)) }
-        DccFunctionNumberField("Fernlicht", HighBeamIcon, values.highBeam) { onValuesChange(values.copy(highBeam = it)) }
-        DccFunctionNumberField("Sound", Icons.Default.VolumeUp, values.sound) { onValuesChange(values.copy(sound = it)) }
-        DccFunctionNumberField("Horn hoch", Icons.Default.Campaign, values.hornHigh) { onValuesChange(values.copy(hornHigh = it)) }
-        DccFunctionNumberField("Horn tief", Icons.Default.Campaign, values.hornLow) { onValuesChange(values.copy(hornLow = it)) }
-        DccFunctionNumberField("Führerstand Beleuchtung", Icons.Default.WbIncandescent, values.cabLight) { onValuesChange(values.copy(cabLight = it)) }
-        DccFunctionNumberField("Zg1/2 aus Fst 1", Icons.Default.LooksOne, values.zg12Fst1) { onValuesChange(values.copy(zg12Fst1 = it)) }
-        DccFunctionNumberField("Zg1/2 aus Fst 2", Icons.Default.LooksTwo, values.zg12Fst2) { onValuesChange(values.copy(zg12Fst2 = it)) }
-        DccFunctionNumberField("Rangierfahrt", Icons.Default.SwapHoriz, values.shunting) { onValuesChange(values.copy(shunting = it)) }
-        DccFunctionNumberField("Maschinenraum Beleuchtung", Icons.Default.WbIncandescent, values.engineRoomLight) { onValuesChange(values.copy(engineRoomLight = it)) }
-        DccFunctionNumberField("Türen öffnen/schließen", SlidingDoorsIcon, values.doors) { onValuesChange(values.copy(doors = it)) }
+        if (soundOnly) {
+            DccFunctionNumberField("Sound", Icons.Default.VolumeUp, values.sound) { onValuesChange(values.copy(sound = it)) }
+            DccFunctionNumberField("Horn hoch", Icons.Default.Campaign, values.hornHigh) { onValuesChange(values.copy(hornHigh = it)) }
+            DccFunctionNumberField("Horn tief", Icons.Default.Campaign, values.hornLow) { onValuesChange(values.copy(hornLow = it)) }
+            DccFunctionNumberField("Türen öffnen/schließen", SlidingDoorsIcon, values.doors) { onValuesChange(values.copy(doors = it)) }
+        } else {
+            DccFunctionNumberField("Licht", Icons.Default.Lightbulb, values.light) { onValuesChange(values.copy(light = it)) }
+            DccFunctionNumberField("Fernlicht", HighBeamIcon, values.highBeam) { onValuesChange(values.copy(highBeam = it)) }
+            DccFunctionNumberField("Führerstand Beleuchtung", Icons.Default.WbIncandescent, values.cabLight) { onValuesChange(values.copy(cabLight = it)) }
+            DccFunctionNumberField("Zg1/2 aus Fst 1", Icons.Default.LooksOne, values.zg12Fst1) { onValuesChange(values.copy(zg12Fst1 = it)) }
+            DccFunctionNumberField("Zg1/2 aus Fst 2", Icons.Default.LooksTwo, values.zg12Fst2) { onValuesChange(values.copy(zg12Fst2 = it)) }
+            DccFunctionNumberField("Rangierfahrt", Icons.Default.SwapHoriz, values.shunting) { onValuesChange(values.copy(shunting = it)) }
+            DccFunctionNumberField("Maschinenraum Beleuchtung", Icons.Default.WbIncandescent, values.engineRoomLight) { onValuesChange(values.copy(engineRoomLight = it)) }
+        }
     }
 }
 
@@ -1498,8 +1504,9 @@ fun DrivingScreen(
     var targetSpeedKmH by remember { mutableFloatStateOf(0f) }
     var isForwardDirection by remember { mutableStateOf(true) }
 
-    var showAddLocoDialog by remember { mutableStateOf(false) }
-    var editingLoco by remember { mutableStateOf<Loco?>(null) }
+    var showAddLocoDialog by rememberSaveable { mutableStateOf(false) }
+    var editingLocoId by rememberSaveable { mutableStateOf<String?>(null) }
+    val editingLoco = savedLocos.firstOrNull { it.id == editingLocoId }
 
     val activeLoco = savedLocos.find { it.id == selectedLocoId } ?: savedLocos.firstOrNull()
     val sortedLocos = remember(savedLocos) { savedLocos.sortedBy { it.name.trim().lowercase(Locale.ROOT) } }
@@ -1544,6 +1551,35 @@ fun DrivingScreen(
                 delay(150)
             }
         }
+    }
+
+    if (showAddLocoDialog || editingLoco != null) {
+        val original = editingLoco
+        key(original?.id) {
+            LocoEditorScreen(
+                initialLoco = original,
+                onBack = { showAddLocoDialog = false; editingLocoId = null },
+                onSave = { updated ->
+                    if (original == null) {
+                        onAddLoco(updated.name, updated.address, updated.maxSpeedKmH,
+                            updated.decoderManufacturer, updated.illustrationId, updated.note,
+                            updated.dccFunctions, updated.railcomMultiplier)
+                    } else {
+                        onUpdateLoco(updated)
+                    }
+                    showAddLocoDialog = false
+                    editingLocoId = null
+                },
+                onDelete = if (original == null) null else ({
+                    onRemoveLoco(original.id)
+                    if (selectedLocoId == original.id) {
+                        selectedLocoId = savedLocos.firstOrNull { it.id != original.id }?.id.orEmpty()
+                    }
+                    editingLocoId = null
+                })
+            )
+        }
+        return
     }
 
     if (showVehicleOverview) {
@@ -1794,7 +1830,7 @@ fun DrivingScreen(
                                 }
                                 FilterChip(
                                     selected = false,
-                                    onClick = { editingLoco = loco },
+                                    onClick = { editingLocoId = loco.id },
                                     modifier = Modifier.offset(y = (-2).dp),
                                     label = {
                                         Icon(
@@ -2069,266 +2105,6 @@ fun DrivingScreen(
         }
     }
 
-    if (showAddLocoDialog) {
-        var addDialogTab by remember { mutableIntStateOf(0) }
-        var newName by remember { mutableStateOf("") }
-        var newAddr by remember { mutableStateOf("3") }
-        var newMaxSpd by remember { mutableStateOf("160") }
-        var newDecoderManufacturer by remember { mutableStateOf("") }
-        var newRailcomMultiplier by remember { mutableStateOf("1.0") }
-        var newIllustrationId by remember { mutableStateOf("") }
-        var newNote by remember { mutableStateOf("") }
-        var newDccFunctionInputs by remember { mutableStateOf(DccFunctionInputs()) }
-
-        Dialog(onDismissRequest = { showAddLocoDialog = false }) {
-            Surface(
-                modifier = Modifier.fillMaxWidth(),
-                shape = MaterialTheme.shapes.extraLarge,
-                color = MaterialTheme.colorScheme.surface,
-                tonalElevation = 6.dp
-            ) {
-                Column(modifier = Modifier.fillMaxWidth()) {
-                    TabRow(selectedTabIndex = addDialogTab) {
-                        Tab(selected = addDialogTab == 0, onClick = { addDialogTab = 0 }, text = { Text("Allgemein") })
-                        Tab(selected = addDialogTab == 1, onClick = { addDialogTab = 1 }, text = { Text("DCC") })
-                    }
-                    Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .heightIn(max = 560.dp)
-                            .verticalScroll(rememberScrollState())
-                            .padding(horizontal = 24.dp, vertical = 16.dp),
-                        verticalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        if (addDialogTab == 0) {
-                            OutlinedTextField(
-                                value = newName,
-                                onValueChange = { newName = it },
-                                label = { Text("Lok Name (z.B. BR 103)") },
-                                singleLine = true,
-                                modifier = Modifier.fillMaxWidth()
-                            )
-                            OutlinedTextField(
-                                value = newNote,
-                                onValueChange = { newNote = it },
-                                label = { Text("Bemerkung") },
-                                singleLine = true,
-                                modifier = Modifier.fillMaxWidth()
-                            )
-                            OutlinedTextField(
-                                value = newAddr,
-                                onValueChange = { newAddr = it },
-                                label = { Text("DCC / CV Adresse (1-9999)") },
-                                singleLine = true,
-                                modifier = Modifier.fillMaxWidth()
-                            )
-                            OutlinedTextField(
-                                value = newMaxSpd,
-                                onValueChange = { newMaxSpd = it },
-                                label = { Text("Max. Geschwindigkeit (km/h)") },
-                                singleLine = true,
-                                modifier = Modifier.fillMaxWidth()
-                            )
-                            DecoderManufacturerDropdown(
-                                selectedManufacturer = newDecoderManufacturer,
-                                onManufacturerSelected = { newDecoderManufacturer = it }
-                            )
-                            if (newDecoderManufacturer.equals("Custom", ignoreCase = true)) {
-                                OutlinedTextField(
-                                    value = newRailcomMultiplier,
-                                    onValueChange = { newRailcomMultiplier = it },
-                                    label = { Text("Railcom Multiplikator") },
-                                    singleLine = true,
-                                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
-                                    modifier = Modifier.fillMaxWidth()
-                                )
-                            }
-                            LocoIllustrationDropdown(
-                                selectedIllustrationId = newIllustrationId,
-                                onIllustrationSelected = { newIllustrationId = it }
-                            )
-                        } else {
-                            DccFunctionAssignmentsEditor(
-                                values = newDccFunctionInputs,
-                                onValuesChange = { newDccFunctionInputs = it }
-                            )
-                        }
-                    }
-                    Row(
-                        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
-                        horizontalArrangement = Arrangement.End,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        TextButton(onClick = { showAddLocoDialog = false }) {
-                            Text("Abbrechen")
-                        }
-                        Button(
-                            enabled = newDecoderManufacturer.isNotBlank() && newDccFunctionInputs.isValid() &&
-                                (!newDecoderManufacturer.equals("Custom", ignoreCase = true) ||
-                                    (newRailcomMultiplier.replace(',', '.').toFloatOrNull()?.let { it >= 0f } == true)),
-                            onClick = {
-                                val addr = newAddr.toIntOrNull() ?: 3
-                                val spd = newMaxSpd.toIntOrNull() ?: 160
-                                onAddLoco(
-                                    newName,
-                                    addr,
-                                    spd,
-                                    newDecoderManufacturer,
-                                    newIllustrationId,
-                                    newNote,
-                                    newDccFunctionInputs.toDccFunctions(),
-                                    if (newDecoderManufacturer.equals("Custom", ignoreCase = true))
-                                        newRailcomMultiplier.replace(',', '.').toFloat() else 1f
-                                )
-                                showAddLocoDialog = false
-                            }
-                        ) {
-                            Text("Speichern")
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    editingLoco?.let { loco: Loco ->
-        var editDialogTab by remember(loco.id) { mutableIntStateOf(0) }
-        var editName by remember(loco.id) { mutableStateOf(loco.name) }
-        var editAddress by remember(loco.id) { mutableStateOf(loco.address.toString()) }
-        var editMaxSpeed by remember(loco.id) { mutableStateOf(loco.maxSpeedKmH.toString()) }
-        var editDecoderManufacturer by remember(loco.id) { mutableStateOf(loco.decoderManufacturer) }
-        var editRailcomMultiplier by remember(loco.id) { mutableStateOf(loco.railcomMultiplier.toString()) }
-        var editIllustrationId by remember(loco.id) { mutableStateOf(loco.illustrationId) }
-        var editNote by remember(loco.id) { mutableStateOf(loco.note) }
-        var editDccFunctionInputs by remember(loco.id) { mutableStateOf(loco.dccFunctions.toInputs()) }
-
-        Dialog(onDismissRequest = { editingLoco = null }) {
-            Surface(
-                modifier = Modifier.fillMaxWidth(),
-                shape = MaterialTheme.shapes.extraLarge,
-                color = MaterialTheme.colorScheme.surface,
-                tonalElevation = 6.dp
-            ) {
-                Column(modifier = Modifier.fillMaxWidth()) {
-                    TabRow(selectedTabIndex = editDialogTab) {
-                        Tab(selected = editDialogTab == 0, onClick = { editDialogTab = 0 }, text = { Text("Allgemein") })
-                        Tab(selected = editDialogTab == 1, onClick = { editDialogTab = 1 }, text = { Text("DCC") })
-                    }
-                    Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .heightIn(max = 560.dp)
-                            .verticalScroll(rememberScrollState())
-                            .padding(horizontal = 24.dp, vertical = 16.dp),
-                        verticalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        if (editDialogTab == 0) {
-                            OutlinedTextField(
-                                value = editName,
-                                onValueChange = { editName = it },
-                                label = { Text("Lokname") },
-                                singleLine = true,
-                                modifier = Modifier.fillMaxWidth()
-                            )
-                            OutlinedTextField(
-                                value = editNote,
-                                onValueChange = { editNote = it },
-                                label = { Text("Bemerkung") },
-                                singleLine = true,
-                                modifier = Modifier.fillMaxWidth()
-                            )
-                            OutlinedTextField(
-                                value = editAddress,
-                                onValueChange = { editAddress = it },
-                                label = { Text("DCC-Adresse (1–9999)") },
-                                singleLine = true,
-                                modifier = Modifier.fillMaxWidth()
-                            )
-                            OutlinedTextField(
-                                value = editMaxSpeed,
-                                onValueChange = { editMaxSpeed = it },
-                                label = { Text("Max. Geschwindigkeit (km/h)") },
-                                singleLine = true,
-                                modifier = Modifier.fillMaxWidth()
-                            )
-                            DecoderManufacturerDropdown(
-                                selectedManufacturer = editDecoderManufacturer,
-                                onManufacturerSelected = { editDecoderManufacturer = it }
-                            )
-                            if (editDecoderManufacturer.equals("Custom", ignoreCase = true)) {
-                                OutlinedTextField(
-                                    value = editRailcomMultiplier,
-                                    onValueChange = { editRailcomMultiplier = it },
-                                    label = { Text("Railcom Multiplikator") },
-                                    singleLine = true,
-                                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
-                                    modifier = Modifier.fillMaxWidth()
-                                )
-                            }
-                            LocoIllustrationDropdown(
-                                selectedIllustrationId = editIllustrationId,
-                                onIllustrationSelected = { editIllustrationId = it }
-                            )
-                            TextButton(
-                                onClick = {
-                                    onRemoveLoco(loco.id)
-                                    if (selectedLocoId == loco.id) {
-                                        selectedLocoId = savedLocos.firstOrNull { it.id != loco.id }?.id.orEmpty()
-                                    }
-                                    editingLoco = null
-                                },
-                                modifier = Modifier.fillMaxWidth()
-                            ) {
-                                Icon(Icons.Default.Delete, contentDescription = null)
-                                Spacer(modifier = Modifier.width(6.dp))
-                                Text("Fahrzeug löschen", color = MaterialTheme.colorScheme.error)
-                            }
-                        } else {
-                            DccFunctionAssignmentsEditor(
-                                values = editDccFunctionInputs,
-                                onValuesChange = { editDccFunctionInputs = it }
-                            )
-                        }
-                    }
-                    Row(
-                        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
-                        horizontalArrangement = Arrangement.End,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        TextButton(onClick = { editingLoco = null }) {
-                            Text("Abbrechen")
-                        }
-                        Button(
-                            enabled = (editAddress.toIntOrNull()?.let { it in 1..9999 } == true) &&
-                                (editMaxSpeed.toIntOrNull() ?: 0) > 0 &&
-                                editDecoderManufacturer.isNotBlank() && editDccFunctionInputs.isValid() &&
-                                (!editDecoderManufacturer.equals("Custom", ignoreCase = true) ||
-                                    (editRailcomMultiplier.replace(',', '.').toFloatOrNull()?.let { it >= 0f } == true)),
-                            onClick = {
-                                onUpdateLoco(
-                                    loco.copy(
-                                        name = editName,
-                                        address = editAddress.toInt(),
-                                        maxSpeedKmH = editMaxSpeed.toInt(),
-                                        decoderManufacturer = editDecoderManufacturer,
-                                        railcomMultiplier = if (editDecoderManufacturer.equals("Custom", ignoreCase = true))
-                                            editRailcomMultiplier.replace(',', '.').toFloat() else 1f,
-                                        illustrationId = editIllustrationId,
-                                        note = editNote,
-                                        dccFunctions = editDccFunctionInputs.toDccFunctions()
-                                    )
-                                )
-                                editingLoco = null
-                            }
-                        ) {
-                            Text("Speichern")
-                        }
-                    }
-                }
-            }
-        }
-    }
-
     if (showWifiExportDialog) {
         WifiLocoTransferDialog(
             devices = wifiTransferDevices,
@@ -2340,6 +2116,176 @@ fun DrivingScreen(
             },
             onDismiss = { showWifiExportDialog = false }
         )
+    }
+}
+
+
+@Composable
+private fun LocoEditorScreen(
+    initialLoco: Loco?,
+    onBack: () -> Unit,
+    onSave: (Loco) -> Unit,
+    onDelete: (() -> Unit)? = null
+) {
+    val draftId = rememberSaveable(initialLoco?.id) { initialLoco?.id ?: UUID.randomUUID().toString() }
+    val loco = remember(draftId) { initialLoco ?: Loco(id = draftId, name = "", address = 3) }
+    var selectedTab by rememberSaveable(loco.id) { mutableIntStateOf(0) }
+    var editName by rememberSaveable(loco.id) { mutableStateOf(loco.name) }
+    var editAddress by rememberSaveable(loco.id) { mutableStateOf(loco.address.toString()) }
+    var editMaxSpeed by rememberSaveable(loco.id) { mutableStateOf(loco.maxSpeedKmH.toString()) }
+    var editDecoderManufacturer by rememberSaveable(loco.id) { mutableStateOf(loco.decoderManufacturer) }
+    var editRailcomMultiplier by rememberSaveable(loco.id) { mutableStateOf(loco.railcomMultiplier.toString()) }
+    var editIllustrationId by rememberSaveable(loco.id) { mutableStateOf(loco.illustrationId) }
+    var editNote by rememberSaveable(loco.id) { mutableStateOf(loco.note) }
+    var editDccFunctionInputs by rememberSaveable(loco.id, stateSaver = androidx.compose.runtime.saveable.listSaver(
+        save = { listOf(it.light, it.sound, it.hornHigh, it.hornLow, it.cabLight,
+            it.zg12Fst1, it.zg12Fst2, it.highBeam, it.shunting, it.engineRoomLight, it.doors) },
+        restore = { DccFunctionInputs(it[0], it[1], it[2], it[3], it[4], it[5],
+            it[6], it[7], it[8], it[9], it[10]) }
+    )) { mutableStateOf(loco.dccFunctions.toInputs()) }
+    androidx.activity.compose.BackHandler(onBack = onBack)
+    val address = editAddress.toIntOrNull()
+    val maxSpeed = editMaxSpeed.toIntOrNull()
+    val multiplier = editRailcomMultiplier.replace(',', '.').toFloatOrNull()
+    val isCustom = editDecoderManufacturer.equals("Custom", ignoreCase = true)
+    val canSave = address != null && address in 1..9999 && maxSpeed != null && maxSpeed > 0 &&
+        editDecoderManufacturer.isNotBlank() && editDccFunctionInputs.isValid() &&
+        (!isCustom || (multiplier != null && multiplier.isFinite() && multiplier >= 0f))
+
+    Column(Modifier.fillMaxSize().imePadding()) {
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            IconButton(onClick = onBack) {
+                Icon(Icons.Default.ArrowBack, contentDescription = "Zurück ohne Speichern")
+            }
+            Text(
+                if (initialLoco == null) "Lok anlegen" else "Lok bearbeiten",
+                modifier = Modifier.weight(1f),
+                style = MaterialTheme.typography.titleLarge,
+                fontWeight = FontWeight.Bold
+            )
+            FilterChip(selected = false, enabled = canSave, onClick = {
+                onSave(loco.copy(
+                    name = editName,
+                    address = requireNotNull(address),
+                    maxSpeedKmH = requireNotNull(maxSpeed),
+                    decoderManufacturer = editDecoderManufacturer,
+                    railcomMultiplier = if (isCustom) requireNotNull(multiplier) else 1f,
+                    illustrationId = editIllustrationId,
+                    note = editNote,
+                    dccFunctions = editDccFunctionInputs.toDccFunctions()
+                ))
+            },
+                label = { Text("Speichern") },
+                colors = FilterChipDefaults.filterChipColors(
+                    containerColor = MaterialTheme.colorScheme.surfaceVariant,
+                    labelColor = Color.White
+                ),
+                border = FilterChipDefaults.filterChipBorder(
+                    enabled = canSave,
+                    selected = false,
+                    borderColor = Color(0xFF2A3A50),
+                    selectedBorderColor = Color(0xFF52CBFF),
+                    borderWidth = 1.dp,
+                    selectedBorderWidth = 2.dp
+                )
+            )
+        }
+        BoxWithConstraints(Modifier.fillMaxWidth()) {
+            // Extend through MainScreen's 16 dp horizontal content insets.
+            TabRow(
+                selectedTabIndex = selectedTab,
+                modifier = Modifier.requiredWidth(maxWidth + 32.dp)
+            ) {
+                Tab(selected = selectedTab == 0, onClick = { selectedTab = 0 }, text = { Text("Fahrzeug") })
+                Tab(selected = selectedTab == 1, onClick = { selectedTab = 1 }, text = { Text("Funktionen") })
+                Tab(selected = selectedTab == 2, onClick = { selectedTab = 2 }, text = { Text("Sound") })
+            }
+        }
+        val vehicleScroll = rememberScrollState()
+        val functionsScroll = rememberScrollState()
+        val soundScroll = rememberScrollState()
+        Column(
+            modifier = Modifier.weight(1f).fillMaxWidth()
+                .verticalScroll(when (selectedTab) {
+                    0 -> vehicleScroll
+                    1 -> functionsScroll
+                    else -> soundScroll
+                })
+                .padding(horizontal = 16.dp, vertical = 20.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            if (selectedTab == 0) {
+                OutlinedTextField(
+                    value = editName,
+                    onValueChange = { editName = it },
+                    label = { Text("Lokname") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+                OutlinedTextField(
+                    value = editNote,
+                    onValueChange = { editNote = it },
+                    label = { Text("Bemerkung") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+                OutlinedTextField(
+                    value = editAddress,
+                    onValueChange = { editAddress = it },
+                    label = { Text("DCC-Adresse (1–9999)") },
+                    isError = address == null || address !in 1..9999,
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+                OutlinedTextField(
+                    value = editMaxSpeed,
+                    onValueChange = { editMaxSpeed = it },
+                    label = { Text("Max. Geschwindigkeit (km/h)") },
+                    isError = maxSpeed == null || maxSpeed <= 0,
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+                DecoderManufacturerDropdown(
+                    selectedManufacturer = editDecoderManufacturer,
+                    onManufacturerSelected = { editDecoderManufacturer = it }
+                )
+                if (isCustom) {
+                    OutlinedTextField(
+                        value = editRailcomMultiplier,
+                        onValueChange = { editRailcomMultiplier = it },
+                        label = { Text("Railcom Multiplikator") },
+                        isError = multiplier == null || !multiplier.isFinite() || multiplier < 0f,
+                        singleLine = true,
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+                LocoIllustrationDropdown(
+                    selectedIllustrationId = editIllustrationId,
+                    onIllustrationSelected = { editIllustrationId = it }
+                )
+                if (onDelete != null) {
+                    HorizontalDivider(modifier = Modifier.padding(top = 12.dp))
+                    TextButton(onClick = onDelete, modifier = Modifier.fillMaxWidth()) {
+                        Icon(Icons.Default.Delete, contentDescription = null,
+                            tint = MaterialTheme.colorScheme.error)
+                        Spacer(Modifier.width(8.dp))
+                        Text("Fahrzeug löschen", color = MaterialTheme.colorScheme.error)
+                    }
+                }
+            } else {
+                key(selectedTab) {
+                    DccFunctionAssignmentsEditor(editDccFunctionInputs, soundOnly = selectedTab == 2) {
+                        editDccFunctionInputs = it
+                    }
+                }
+            }
+        }
     }
 }
 
