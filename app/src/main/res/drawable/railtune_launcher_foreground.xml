@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Scale the padding with the launcher, keeping the full mark inside the safe area. -->
+<inset xmlns:android="http://schemas.android.com/apk/res/android"
+    android:inset="22%">
+    <bitmap
+        android:src="@drawable/ic_launcher_foreground"
+        android:gravity="fill"
+        android:filter="true" />
+</inset>
