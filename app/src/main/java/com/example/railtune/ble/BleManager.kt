@@ -11,6 +11,7 @@ import android.os.Build
 import android.os.SystemClock
 import android.util.Log
 import com.example.railtune.model.BleDevice
+import com.example.railtune.model.BleConnectionLogEntry
 import com.example.railtune.model.ConnectionState
 import com.example.railtune.model.DiscoveredGattCharacteristic
 import com.example.railtune.model.DiscoveredGattService
@@ -55,6 +56,38 @@ class BleManager(private val context: Context) {
 
     private val _connectionState = MutableStateFlow<ConnectionState>(ConnectionState.Disconnected)
     val connectionState: StateFlow<ConnectionState> = _connectionState.asStateFlow()
+
+    private val _connectionLog = MutableStateFlow<List<BleConnectionLogEntry>>(emptyList())
+    val connectionLog: StateFlow<List<BleConnectionLogEntry>> = _connectionLog.asStateFlow()
+
+    @Synchronized
+    private fun updateConnectionState(state: ConnectionState) {
+        val previous = _connectionState.value
+        if (state == previous) return
+        val interrupted = state is ConnectionState.Disconnected && !isManualDisconnect &&
+            (previous is ConnectionState.Connected || previous is ConnectionState.Connecting)
+        val message = when (state) {
+            is ConnectionState.Scanning -> "Bluetooth-Suche gestartet"
+            is ConnectionState.Connecting -> "Verbindungsaufbau: ${state.deviceName}"
+            is ConnectionState.Connected -> "Verbunden: ${state.deviceName} (${state.address})"
+            is ConnectionState.Error -> "Fehler: ${state.message}"
+            is ConnectionState.Disconnected -> when {
+                isManualDisconnect -> "Bluetooth manuell getrennt"
+                interrupted -> "Bluetooth-Verbindung abgebrochen"
+                previous is ConnectionState.Scanning -> "Bluetooth-Suche beendet"
+                else -> "Bluetooth getrennt"
+            }
+        }
+        _connectionLog.value = (listOf(BleConnectionLogEntry(
+            message = message, isError = interrupted || state is ConnectionState.Error
+        )) + _connectionLog.value).take(200)
+        _connectionState.value = state
+    }
+
+    @Synchronized
+    fun clearConnectionLog() {
+        _connectionLog.value = emptyList()
+    }
 
     private val _liveDataStream = MutableStateFlow<LiveDataPacket?>(null)
     val liveDataStream: StateFlow<LiveDataPacket?> = _liveDataStream.asStateFlow()
@@ -129,13 +162,13 @@ class BleManager(private val context: Context) {
         override fun onScanFailed(errorCode: Int) {
             Log.e(TAG, "BLE Scan fehlgeschlagen mit Fehlercode: $errorCode")
             _isScanning.value = false
-            _connectionState.value = ConnectionState.Error("Scan fehlgeschlagen (Code: $errorCode)")
+            updateConnectionState(ConnectionState.Error("Scan fehlgeschlagen (Code: $errorCode)"))
         }
     }
 
     fun startScan() {
         if (!isBluetoothEnabled) {
-            _connectionState.value = ConnectionState.Error("Bluetooth ist ausgeschaltet")
+            updateConnectionState(ConnectionState.Error("Bluetooth ist ausgeschaltet"))
             return
         }
 
@@ -143,14 +176,14 @@ class BleManager(private val context: Context) {
 
         val scanner = bluetoothAdapter?.bluetoothLeScanner
         if (scanner == null) {
-            _connectionState.value = ConnectionState.Error("BLE Scanner nicht verfügbar")
+            updateConnectionState(ConnectionState.Error("BLE Scanner nicht verfügbar"))
             return
         }
 
         _discoveredDevices.value = emptyList()
         lastDeviceSortAtMs = 0L
         _isScanning.value = true
-        _connectionState.value = ConnectionState.Scanning
+        updateConnectionState(ConnectionState.Scanning)
 
         val scanSettings = ScanSettings.Builder()
             .setScanMode(ScanSettings.SCAN_MODE_LOW_LATENCY)
@@ -165,7 +198,7 @@ class BleManager(private val context: Context) {
         } catch (e: Exception) {
             Log.e(TAG, "Fehler beim Starten des Scans", e)
             _isScanning.value = false
-            _connectionState.value = ConnectionState.Error("Scan Startfehler: ${e.localizedMessage}")
+            updateConnectionState(ConnectionState.Error("Scan Startfehler: ${e.localizedMessage}"))
         }
     }
 
@@ -178,7 +211,7 @@ class BleManager(private val context: Context) {
             }
             _isScanning.value = false
             if (_connectionState.value is ConnectionState.Scanning) {
-                _connectionState.value = ConnectionState.Disconnected
+                updateConnectionState(ConnectionState.Disconnected)
             }
         }
     }
@@ -188,7 +221,7 @@ class BleManager(private val context: Context) {
         stopScan()
         disconnectInternal()
         activeDeviceName = bleDevice.name
-        _connectionState.value = ConnectionState.Connecting(bleDevice.name)
+        updateConnectionState(ConnectionState.Connecting(bleDevice.name))
         Log.i(TAG, "GATT_CONNECT request name=${bleDevice.name} address=${bleDevice.address} elapsedMs=${SystemClock.elapsedRealtime()}")
 
         try {
@@ -200,7 +233,7 @@ class BleManager(private val context: Context) {
             )
         } catch (e: Exception) {
             Log.e(TAG, "Verbindungsfehler bei GATT Connect", e)
-            _connectionState.value = ConnectionState.Error("Verbindung fehlgeschlagen: ${e.localizedMessage}")
+            updateConnectionState(ConnectionState.Error("Verbindung fehlgeschlagen: ${e.localizedMessage}"))
         }
     }
 
@@ -224,7 +257,7 @@ class BleManager(private val context: Context) {
         activeDeviceName = null
         _discoveredGattServices.value = emptyList()
         _activeCharacteristic.value = null
-        _connectionState.value = ConnectionState.Disconnected
+        updateConnectionState(ConnectionState.Disconnected)
     }
 
     private fun deviceNameFor(gatt: BluetoothGatt): String =
@@ -281,7 +314,7 @@ class BleManager(private val context: Context) {
                 if (gatt === activeGatt) {
                     Log.d(TAG, "GATT Verbunden mit $deviceName. Nutze Standard-Verbindungspriorität und fordere MTU an...")
                     saveLastConnectedDevice(gatt.device.address, deviceName)
-                    _connectionState.value = ConnectionState.Connecting("$deviceName (Dienste werden gelesen)")
+                    updateConnectionState(ConnectionState.Connecting("$deviceName (Dienste werden gelesen)"))
 
                     val mtuRequested = gatt.requestMtu(512)
                     if (!mtuRequested) {
@@ -300,7 +333,7 @@ class BleManager(private val context: Context) {
                     activeGatt = null
                     _discoveredGattServices.value = emptyList()
                     _activeCharacteristic.value = null
-                    _connectionState.value = ConnectionState.Disconnected
+                    updateConnectionState(ConnectionState.Disconnected)
                 }
 
                 if (!isManualDisconnect && _isAutoConnectEnabled.value && !_lastConnectedAddress.value.isNullOrEmpty()) {
@@ -314,7 +347,7 @@ class BleManager(private val context: Context) {
                 } catch (_: Exception) {}
                 if (gatt === activeGatt) {
                     activeGatt = null
-                    _connectionState.value = ConnectionState.Error("GATT Fehler (Status: $status)")
+                    updateConnectionState(ConnectionState.Error("GATT Fehler (Status: $status)"))
                 }
 
                 if (!isManualDisconnect && _isAutoConnectEnabled.value && !_lastConnectedAddress.value.isNullOrEmpty()) {
@@ -354,11 +387,11 @@ class BleManager(private val context: Context) {
                 }
                 _discoveredGattServices.value = servicesList
 
-                _connectionState.value = ConnectionState.Connecting("$deviceName (Datenabo wird aktiviert)")
+                updateConnectionState(ConnectionState.Connecting("$deviceName (Datenabo wird aktiviert)"))
                 subscribeToCharacteristic(gatt)
             } else {
                 Log.e(TAG, "Dienst-Discovery fehlgeschlagen mit Status $status")
-                _connectionState.value = ConnectionState.Error("Dienste konnten nicht gelesen werden ($status)")
+                updateConnectionState(ConnectionState.Error("Dienste konnten nicht gelesen werden ($status)"))
             }
         }
 
@@ -371,7 +404,7 @@ class BleManager(private val context: Context) {
             Log.i(TAG, "CCCD callback: device=${gatt.device.address}, descriptor=${descriptor.uuid}, status=$status")
 
             val deviceName = deviceNameFor(gatt)
-            _connectionState.value = ConnectionState.Connected(deviceName, gatt.device.address)
+            updateConnectionState(ConnectionState.Connected(deviceName, gatt.device.address))
 
             if (status != BluetoothGatt.GATT_SUCCESS) {
                 Log.w(TAG, "CCCD-Abo Status $status, aber Verbindung bleibt aufrecht")
@@ -499,7 +532,7 @@ class BleManager(private val context: Context) {
 
         if (charToSubscribe == null) {
             Log.e(TAG, "Keine passende BLE Charakteristik am ESP32 gefunden.")
-            _connectionState.value = ConnectionState.Error("Keine Daten-Charakteristik am ESP32 gefunden")
+            updateConnectionState(ConnectionState.Error("Keine Daten-Charakteristik am ESP32 gefunden"))
             return
         }
 
@@ -513,7 +546,7 @@ class BleManager(private val context: Context) {
         )
 
         val deviceName = deviceNameFor(targetGatt)
-        _connectionState.value = ConnectionState.Connected(deviceName, targetGatt.device.address)
+        updateConnectionState(ConnectionState.Connected(deviceName, targetGatt.device.address))
 
         val supportsNotify = (charToSubscribe.properties and BluetoothGattCharacteristic.PROPERTY_NOTIFY) != 0
         val supportsIndicate = (charToSubscribe.properties and BluetoothGattCharacteristic.PROPERTY_INDICATE) != 0

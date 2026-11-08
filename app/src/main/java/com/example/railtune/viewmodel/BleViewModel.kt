@@ -23,6 +23,9 @@ class BleViewModel(application: Application) : AndroidViewModel(application) {
     val discoveredDevices: StateFlow<List<BleDevice>> = bleManager.discoveredDevices
     val isScanning: StateFlow<Boolean> = bleManager.isScanning
     val connectionState: StateFlow<ConnectionState> = bleManager.connectionState
+    val connectionLog = bleManager.connectionLog
+
+    fun clearConnectionLog() = bleManager.clearConnectionLog()
 
     // BLE-Messdaten bleiben getrennt von RailCom-Rückmeldungen der z21.
     val liveDataStream: StateFlow<LiveDataPacket?> = bleManager.liveDataStream
@@ -98,6 +101,12 @@ class BleViewModel(application: Application) : AndroidViewModel(application) {
 
     fun clearDataHistory() {
         bleManager.clearHistory()
+    }
+
+    fun resetTripDistance(): Boolean {
+        if (connectionState.value !is ConnectionState.Connected ||
+            bleManager.activeCharacteristic.value?.isWritable != true) return false
+        return bleManager.writeText("RESET_DISTANCE")
     }
 
     // z21 & CV Functions

@@ -65,6 +65,7 @@ import androidx.compose.ui.window.Dialog
 import androidx.core.content.ContextCompat
 import com.example.railtune.R
 import com.example.railtune.model.BleDevice
+import com.example.railtune.model.BleConnectionLogEntry
 import com.example.railtune.model.DccFunctions
 import com.example.railtune.model.ConnectionState
 import com.example.railtune.model.CvResult
@@ -125,6 +126,7 @@ fun MainScreen(viewModel: BleViewModel) {
     val connectionState by viewModel.connectionState.collectAsState()
     val liveDataPacket by viewModel.liveDataStream.collectAsState()
     val dataHistory by viewModel.dataHistory.collectAsState()
+    val connectionLog by viewModel.connectionLog.collectAsState()
     val lastConnectedAddress by viewModel.lastConnectedAddress.collectAsState()
     val lastConnectedName by viewModel.lastConnectedName.collectAsState()
     val isAutoConnectEnabled by viewModel.isAutoConnectEnabled.collectAsState()
@@ -413,6 +415,9 @@ fun MainScreen(viewModel: BleViewModel) {
                             onSelectedLocoChange = { selectedMeasurementLocoId = it },
                             savedLocos = savedLocos,
                             railComReadings = railComReadings,
+                            locoStates = locoStates,
+                            onSetLocoSpeed = viewModel::setLocoSpeed,
+                            onGetLocoInfo = viewModel::getLocoInfo,
                             connectionState = connectionState,
                             isScanning = isScanning,
                             lastConnectedName = lastConnectedName,
@@ -421,6 +426,8 @@ fun MainScreen(viewModel: BleViewModel) {
                             discoveredDevices = discoveredDevices,
                             liveDataPacket = liveDataPacket,
                             dataHistory = dataHistory,
+                            connectionLog = connectionLog,
+                            onClearConnectionLog = viewModel::clearConnectionLog,
                             onStartScan = {
                                 if (hasPermissions) viewModel.startScan()
                                 else permissionLauncher.launch(requiredPermissions)
@@ -430,7 +437,8 @@ fun MainScreen(viewModel: BleViewModel) {
                             onToggleAutoConnect = { viewModel.setAutoConnectEnabled(it) },
                             onForgetDevice = { viewModel.forgetLastDevice() },
                             onConnectDevice = { viewModel.connectDevice(it) },
-                            onClearHistory = { viewModel.clearDataHistory() }
+                            onClearHistory = { viewModel.clearDataHistory() },
+                            onResetTripDistance = viewModel::resetTripDistance
                         )
                     }
                     2 -> {
@@ -737,6 +745,9 @@ fun SpeedMeasurementScreen(
     onSelectedLocoChange: (String) -> Unit,
     savedLocos: List<Loco>,
     railComReadings: Map<Int, RailComReading>,
+    locoStates: Map<Int, Z21LocoState>,
+    onSetLocoSpeed: (Int, Float, Boolean) -> Unit,
+    onGetLocoInfo: (Int) -> Unit,
     connectionState: ConnectionState,
     isScanning: Boolean,
     lastConnectedName: String?,
@@ -745,50 +756,74 @@ fun SpeedMeasurementScreen(
     discoveredDevices: List<BleDevice>,
     liveDataPacket: LiveDataPacket?,
     dataHistory: List<LiveDataPacket>,
+    connectionLog: List<BleConnectionLogEntry>,
+    onClearConnectionLog: () -> Unit,
     onStartScan: () -> Unit,
     onStopScan: () -> Unit,
     onDisconnect: () -> Unit,
     onToggleAutoConnect: (Boolean) -> Unit,
     onForgetDevice: () -> Unit,
     onConnectDevice: (BleDevice) -> Unit,
-    onClearHistory: () -> Unit
+    onClearHistory: () -> Unit,
+    onResetTripDistance: () -> Boolean
 ) {
-    Column(
-        modifier = Modifier.fillMaxSize(),
-        verticalArrangement = Arrangement.spacedBy(16.dp)
-    ) {
-        ConnectionStatusCard(
-            connectionState = connectionState,
-            isScanning = isScanning,
-            lastConnectedName = lastConnectedName,
-            isAutoConnectEnabled = isAutoConnectEnabled,
-            onStartScan = onStartScan,
-            onStopScan = onStopScan,
-            onDisconnect = onDisconnect
-        )
-
-        if (connectionState !is ConnectionState.Connected && !lastConnectedAddress.isNullOrEmpty()) {
-            AutoConnectBanner(
-                lastConnectedName = lastConnectedName ?: "ESP32",
-                isAutoConnectEnabled = isAutoConnectEnabled,
-                onToggleAutoConnect = onToggleAutoConnect,
-                onForgetDevice = onForgetDevice
-            )
+    var measurementShown by remember(lastConnectedAddress) { mutableStateOf(false) }
+    var showConnectionDialog by rememberSaveable { mutableStateOf(false) }
+    val isConnected = connectionState is ConnectionState.Connected
+    LaunchedEffect(isConnected) {
+        if (isConnected) {
+            measurementShown = true
+            showConnectionDialog = false
+        } else {
+            delay(3_000)
+            measurementShown = false
+            showConnectionDialog = false
         }
-
-        when (val state = connectionState) {
-            is ConnectionState.Connected -> {
-                LiveDashboardView(
-                    selectedLocoId = selectedLocoId,
-                    onSelectedLocoChange = onSelectedLocoChange,
-                    savedLocos = savedLocos,
-                    railComReadings = railComReadings,
-                    latestPacket = liveDataPacket,
-                    history = dataHistory,
-                    onClearHistory = onClearHistory
+    }
+    // Scanning/connecting transitions must not restart the three-second grace period.
+    if (isConnected || measurementShown) {
+        LiveDashboardView(
+            selectedLocoId = selectedLocoId,
+            onSelectedLocoChange = onSelectedLocoChange,
+            savedLocos = savedLocos,
+            railComReadings = railComReadings,
+            locoStates = locoStates,
+            onSetLocoSpeed = onSetLocoSpeed,
+            onGetLocoInfo = onGetLocoInfo,
+            latestPacket = liveDataPacket,
+            history = dataHistory,
+            connectionLog = connectionLog,
+            onClearConnectionLog = onClearConnectionLog,
+            onDisconnect = onDisconnect,
+            onClearHistory = onClearHistory,
+            onResetTripDistance = onResetTripDistance,
+            connectionState = connectionState,
+            onReconnect = { showConnectionDialog = true }
+        )
+    } else {
+        Column(
+            modifier = Modifier.fillMaxSize(),
+            verticalArrangement = Arrangement.spacedBy(16.dp)
+        ) {
+            ConnectionStatusCard(
+                connectionState = connectionState,
+                isScanning = isScanning,
+                lastConnectedName = lastConnectedName,
+                isAutoConnectEnabled = isAutoConnectEnabled,
+                onStartScan = onStartScan,
+                onStopScan = onStopScan,
+                onDisconnect = onDisconnect
+            )
+            if (!lastConnectedAddress.isNullOrEmpty()) {
+                AutoConnectBanner(
+                    lastConnectedName = lastConnectedName ?: "ESP32",
+                    isAutoConnectEnabled = isAutoConnectEnabled,
+                    onToggleAutoConnect = onToggleAutoConnect,
+                    onForgetDevice = onForgetDevice
                 )
             }
-            else -> {
+
+            Box(Modifier.weight(1f)) {
                 DeviceScanListView(
                     devices = discoveredDevices,
                     isScanning = isScanning,
@@ -796,7 +831,39 @@ fun SpeedMeasurementScreen(
                     onConnect = onConnectDevice
                 )
             }
+            ConnectionLogSection(connectionLog, onClearConnectionLog)
         }
+    }
+    if (showConnectionDialog) {
+        AlertDialog(
+            onDismissRequest = { showConnectionDialog = false },
+            title = { Text("Bluetooth verbinden") },
+            text = {
+                Column(Modifier.heightIn(max = 450.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    ConnectionStatusCard(
+                        connectionState = connectionState,
+                        isScanning = isScanning,
+                        lastConnectedName = lastConnectedName,
+                        isAutoConnectEnabled = isAutoConnectEnabled,
+                        onStartScan = onStartScan,
+                        onStopScan = onStopScan,
+                        onDisconnect = onDisconnect
+                    )
+                    if (!lastConnectedAddress.isNullOrEmpty()) {
+                        AutoConnectBanner(
+                            lastConnectedName = lastConnectedName ?: "ESP32",
+                            isAutoConnectEnabled = isAutoConnectEnabled,
+                            onToggleAutoConnect = onToggleAutoConnect,
+                            onForgetDevice = onForgetDevice
+                        )
+                    }
+                    DeviceScanListView(discoveredDevices, isScanning, lastConnectedAddress, onConnectDevice)
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { showConnectionDialog = false }) { Text("Schließen") }
+            }
+        )
     }
 }
 
@@ -2408,12 +2475,14 @@ private fun VehicleOverviewCard(
                 maxLines = 2,
                 overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
             )
-            Text(
-                text = "Adresse " + loco.address,
-                modifier = Modifier.fillMaxWidth(),
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
+            if (loco.note.isNotBlank()) {
+                Text(
+                    text = loco.note,
+                    modifier = Modifier.fillMaxWidth(),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
         }
                 IconButton(onClick = onToggleFavorite, modifier = Modifier.align(Alignment.TopEnd).offset(x = 2.dp, y = (-4).dp)) {
                     Icon(if (favorite) Icons.Default.Star else Icons.Default.StarBorder,
@@ -2716,18 +2785,33 @@ fun LiveDashboardView(
     onSelectedLocoChange: (String) -> Unit,
     savedLocos: List<Loco>,
     railComReadings: Map<Int, RailComReading>,
+    locoStates: Map<Int, Z21LocoState>,
+    onSetLocoSpeed: (Int, Float, Boolean) -> Unit,
+    onGetLocoInfo: (Int) -> Unit,
     latestPacket: LiveDataPacket?,
     history: List<LiveDataPacket>,
-    onClearHistory: () -> Unit
+    connectionLog: List<BleConnectionLogEntry>,
+    onClearConnectionLog: () -> Unit,
+    onDisconnect: () -> Unit,
+    onClearHistory: () -> Unit,
+    onResetTripDistance: () -> Boolean,
+    connectionState: ConnectionState,
+    onReconnect: () -> Unit
 ) {
     var locoMenuExpanded by remember { mutableStateOf(false) }
+    val context = LocalContext.current
     val sortedLocos = remember(savedLocos) {
         savedLocos.sortedBy { it.name.trim().lowercase(Locale.ROOT) }
     }
 
     val liveSpeedKmH = parseSpeedFromText(latestPacket?.textValue) ?: 0f
     val batteryReading = parseBatteryReading(latestPacket?.textValue)
+    val tripDistanceMeters = latestPacket?.textValue?.split(',')?.getOrNull(4)
+        ?.toDoubleOrNull()?.takeIf { it.isFinite() && it >= 0.0 }
     val selectedLoco = savedLocos.firstOrNull { it.id == selectedLocoId }
+    LaunchedEffect(selectedLoco?.address) {
+        selectedLoco?.let { onGetLocoInfo(it.address) }
+    }
     val selectedRailCom = selectedLoco?.let { railComReadings[it.address] }
     val railComSpeedKmH = selectedLoco?.let { loco ->
         val isMinitrix = loco.decoderManufacturer.contains("Minitrix", ignoreCase = true)
@@ -2742,232 +2826,365 @@ fun LiveDashboardView(
         }
     }
 
+    var historyExpanded by rememberSaveable { mutableStateOf(false) }
+    val locoState = selectedLoco?.let { locoStates[it.address] }
+    val maxSpeed = selectedLoco?.maxSpeedKmH?.coerceAtLeast(1) ?: 1
+    val isForward = locoState?.isForward ?: true
+    var targetPercent by remember(selectedLocoId) { mutableFloatStateOf(locoState?.speedPercent ?: 0f) }
+    LaunchedEffect(selectedLocoId, locoState?.speedPercent) {
+        targetPercent = locoState?.speedPercent ?: 0f
+    }
+    fun setSpeed(speed: Int) {
+        val loco = selectedLoco ?: return
+        targetPercent = speed.toFloat() / maxSpeed * 100f
+        onSetLocoSpeed(loco.address, targetPercent, isForward)
+    }
+
     Column(
-        modifier = Modifier.fillMaxSize(),
+        modifier = Modifier.fillMaxSize().padding(top = 10.dp).verticalScroll(rememberScrollState()),
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
-        // Live Speedometer Card
-        Card(
-            modifier = Modifier.fillMaxWidth(),
-            colors = CardDefaults.cardColors(
-                containerColor = MaterialTheme.colorScheme.primaryContainer
-            )
-        ) {
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(16.dp),
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.spacedBy(8.dp)
+        Box {
+            Card(
+                onClick = { locoMenuExpanded = true }, enabled = savedLocos.isNotEmpty(),
+                modifier = Modifier.fillMaxWidth(),
+                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
             ) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text(
-                        text = "LIVEDATEN",
-                        style = MaterialTheme.typography.labelMedium,
-                        color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.7f),
-                        letterSpacing = 1.5.sp
-                    )
-                    batteryReading?.let { battery ->
-                        val batteryIconColor = MaterialTheme.colorScheme.onPrimaryContainer
-                        val crossedBatteryColor = MaterialTheme.colorScheme.error
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(4.dp)
-                        ) {
-                            Box(contentAlignment = Alignment.Center) {
-                                Icon(
-                                    imageVector = if (battery.estimatedPercent == 0) Icons.Default.Battery0Bar else Icons.Default.BatteryFull,
-                                    contentDescription = if (battery.estimatedPercent == 0) "Akku leer" else "Akku",
-                                    tint = batteryIconColor
-                                )
-                                if (battery.estimatedPercent == 0) {
-                                    Canvas(modifier = Modifier.size(24.dp)) {
-                                        drawLine(
-                                            color = crossedBatteryColor,
-                                            start = Offset(size.width * 0.18f, size.height * 0.82f),
-                                            end = Offset(size.width * 0.82f, size.height * 0.18f),
-                                            strokeWidth = 2.dp.toPx(),
-                                            cap = StrokeCap.Round
-                                        )
-                                    }
-                                }
-                            }
-                            Text(
-                                text = "${battery.estimatedPercent}%",
-                                style = MaterialTheme.typography.labelMedium,
-                                fontWeight = FontWeight.Bold,
-                                color = batteryIconColor
-                            )
+                Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    val illustration = selectedLoco?.let { locoIllustrationResource(it.illustrationId) }
+                    if (illustration != null) {
+                        Image(painterResource(illustration), contentDescription = null,
+                            modifier = Modifier.width(100.dp).height(44.dp), contentScale = ContentScale.Fit)
+                    } else {
+                        Icon(Icons.Default.Train, contentDescription = null,
+                            modifier = Modifier.width(64.dp).height(40.dp), tint = MaterialTheme.colorScheme.primary)
+                    }
+                    Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                        Text(selectedLoco?.name ?: "Lok auswählen", style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold, maxLines = 1,
+                            overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
+                        selectedLoco?.let {
+                            Text("Adresse ${it.address} · Vmax $maxSpeed", style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
                     }
+                    Icon(Icons.Default.ArrowDropDown, contentDescription = "Lok auswählen")
                 }
-
-                HorizontalDivider(color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.15f))
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text("Triebfahrzeug", style = MaterialTheme.typography.labelLarge)
-                    Box {
-                        OutlinedButton(
-                            onClick = { locoMenuExpanded = true },
-                            enabled = savedLocos.isNotEmpty()
-                        ) {
-                            Text(selectedLoco?.name ?: "Lok auswählen")
-                            Icon(Icons.Default.ArrowDropDown, contentDescription = null)
+            }
+            DropdownMenu(expanded = locoMenuExpanded, onDismissRequest = { locoMenuExpanded = false }) {
+                sortedLocos.forEach { loco ->
+                    DropdownMenuItem(text = {
+                        Column {
+                            Text(loco.name)
+                            if (loco.note.isNotBlank()) Text(loco.note, style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
-                        DropdownMenu(
-                            expanded = locoMenuExpanded,
-                            onDismissRequest = { locoMenuExpanded = false }
+                    }, onClick = { onSelectedLocoChange(loco.id); locoMenuExpanded = false })
+                }
+            }
+        }
+        Card(modifier = Modifier.fillMaxWidth(),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer),
+            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)) {
+            Row(Modifier.fillMaxWidth().padding(12.dp).height(IntrinsicSize.Min),
+                horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                Column(Modifier.width(80.dp), horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Text("Soll", style = MaterialTheme.typography.titleSmall,
+                        modifier = Modifier.fillMaxWidth(), textAlign = TextAlign.Center)
+                    listOf<Int?>(null, 160, 100, 60, 30).forEach { speed ->
+                        val target = speed ?: maxSpeed
+                        val selected = (speed == null || target != maxSpeed) && targetPercent > 0f &&
+                            kotlin.math.abs(targetPercent - target.toFloat() / maxSpeed * 100f) < 0.81f
+                        Button(onClick = { setSpeed(target) },
+                            enabled = selectedLoco != null && target <= maxSpeed,
+                            modifier = Modifier.fillMaxWidth().height(36.dp),
+                            shape = RoundedCornerShape(10.dp),
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant,
+                                contentColor = if (selected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurface),
+                            contentPadding = PaddingValues(horizontal = 6.dp, vertical = 4.dp)
                         ) {
-                            sortedLocos.forEach { loco ->
-                                DropdownMenuItem(
-                                    text = {
-                                        Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                                            Text(loco.name)
-                                            if (loco.note.isNotBlank()) {
-                                                Text(
-                                                    text = loco.note,
-                                                    style = MaterialTheme.typography.bodySmall,
-                                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                                )
-                                            }
-                                        }
-                                    },
-                                    onClick = {
-                                        onSelectedLocoChange(loco.id)
-                                        locoMenuExpanded = false
-                                    }
-                                )
-                            }
+                            Text(speed?.let { "$it km/h" } ?: "Vmax",
+                                style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold)
                         }
                     }
+                    Button(onClick = { setSpeed(0) }, enabled = selectedLoco != null,
+                        modifier = Modifier.fillMaxWidth().height(36.dp), shape = RoundedCornerShape(10.dp),
+                        colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.errorContainer,
+                            contentColor = MaterialTheme.colorScheme.error),
+                        contentPadding = PaddingValues(horizontal = 4.dp, vertical = 4.dp)) {
+                        Icon(Icons.Default.Stop, contentDescription = null, modifier = Modifier.size(16.dp))
+                        Spacer(Modifier.width(4.dp))
+                        Text("Stopp", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold)
+                    }
                 }
-                if (selectedLoco != null) {
-                    val comparisonMax = maxOf(
-                        selectedLoco.maxSpeedKmH.coerceAtLeast(1).toFloat(),
-                        liveSpeedKmH,
-                        railComSpeedKmH ?: 0f
-                    )
-                    ComparisonSpeedRow("Messwagen", liveSpeedKmH, comparisonMax, MaterialTheme.colorScheme.primary)
-                    if (railComSpeedKmH != null) {
-                        ComparisonSpeedRow("${selectedLoco.name}", railComSpeedKmH, comparisonMax, Color(0xFFFF9800))
-                        val difference = liveSpeedKmH - railComSpeedKmH
-                        Text(
-                            text = "Differenz (Messwagen − Lok): ${if (difference > 0) "+" else ""}${"%.1f".format(Locale.getDefault(), difference)} km/h",
-                            style = MaterialTheme.typography.titleSmall,
-                            fontWeight = FontWeight.Bold,
-                            color = if (kotlin.math.abs(difference) < 0.1f) MaterialTheme.colorScheme.primary
-                            else MaterialTheme.colorScheme.onPrimaryContainer
+                VerticalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+                Column(Modifier.weight(1f).fillMaxHeight(), horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(12.dp, Alignment.CenterVertically)) {
+                    Text("Messwagen", style = MaterialTheme.typography.titleMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text("%.1f".format(Locale.getDefault(), liveSpeedKmH), fontSize = 48.sp,
+                        fontWeight = FontWeight.Bold, maxLines = 1)
+                    Text("km/h", style = MaterialTheme.typography.titleMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+                    MeasurementValueRow("Lok", railComSpeedKmH?.let {
+                        "%.1f km/h".format(Locale.getDefault(), it)
+                    } ?: "—")
+                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+                    MeasurementValueRow("Differenz", railComSpeedKmH?.let {
+                        "%+.1f km/h".format(Locale.getDefault(), liveSpeedKmH - it)
+                    } ?: "—")
+                    if (selectedLoco != null && railComSpeedKmH == null) {
+                        Text("Keine RailCom-Geschwindigkeit", style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant, textAlign = TextAlign.Center)
+                    }
+                }
+            }
+        }
+        Row(Modifier.fillMaxWidth().height(IntrinsicSize.Min),
+            horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            Card(modifier = Modifier.weight(1f).fillMaxHeight(),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
+                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)) {
+                Column(Modifier.fillMaxWidth().padding(12.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("Modellstrecke", style = MaterialTheme.typography.labelLarge,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Row(verticalAlignment = Alignment.Bottom,
+                        horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                        Text(tripDistanceMeters?.let { "%.3f".format(Locale.getDefault(), it) } ?: "—",
+                            style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold,
+                            modifier = Modifier.weight(1f, fill = false))
+                        Text("m", style = MaterialTheme.typography.bodyMedium,
+                            modifier = Modifier.padding(bottom = 3.dp),
+                            color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                    OutlinedButton(
+                        onClick = {
+                            val requested = onResetTripDistance()
+                            Toast.makeText(context,
+                                if (requested) "Zurücksetzen angefordert"
+                                else "Zurücksetzen fehlgeschlagen. Verbindung und Messwagen-Firmware prüfen.",
+                                Toast.LENGTH_SHORT).show()
+                        },
+                        enabled = connectionState is ConnectionState.Connected && tripDistanceMeters != null,
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(10.dp),
+                        contentPadding = PaddingValues(horizontal = 6.dp, vertical = 4.dp)
+                    ) {
+                        Icon(Icons.Default.RestartAlt, contentDescription = null, modifier = Modifier.size(16.dp))
+                        Spacer(Modifier.width(4.dp))
+                        Text("Zurücksetzen", style = MaterialTheme.typography.labelMedium)
+                    }
+                }
+            }
+            Card(modifier = Modifier.weight(1f).fillMaxHeight(),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
+                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)) {
+                val batteryColor = if (batteryReading != null && batteryReading.estimatedPercent <= 20)
+                    MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary
+                Column(Modifier.fillMaxSize().padding(12.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("Akku Messwagen", style = MaterialTheme.typography.labelLarge,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Row(verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Icon(if (batteryReading?.estimatedPercent == 0) Icons.Default.Battery0Bar
+                            else Icons.Default.BatteryFull, contentDescription = null,
+                            tint = batteryColor, modifier = Modifier.size(24.dp))
+                        Text(batteryReading?.let { "${it.estimatedPercent} %" } ?: "—",
+                            style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
+                    }
+                    Spacer(Modifier.weight(1f))
+                    if (batteryReading != null) {
+                        LinearProgressIndicator(
+                            progress = { batteryReading.estimatedPercent / 100f },
+                            modifier = Modifier.fillMaxWidth().height(6.dp).clip(RoundedCornerShape(3.dp)),
+                            color = batteryColor,
+                            trackColor = MaterialTheme.colorScheme.outlineVariant
                         )
                     } else {
+                        Text("Keine Akkudaten", style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                    Spacer(Modifier.height(8.dp))
+                }
+            }
+        }
+        OutlinedButton(
+            onClick = if (connectionState is ConnectionState.Connected) onDisconnect else onReconnect,
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Icon(if (connectionState is ConnectionState.Connected) Icons.Default.BluetoothDisabled
+                else Icons.Default.BluetoothSearching, contentDescription = null)
+            Spacer(Modifier.width(8.dp))
+            Text(when (connectionState) {
+                is ConnectionState.Connected -> "Bluetooth trennen"
+                is ConnectionState.Connecting -> "Bluetooth wird verbunden…"
+                is ConnectionState.Scanning -> "Bluetooth wird gesucht…"
+                is ConnectionState.Error -> connectionState.message
+                else -> "Bluetooth verbinden"
+            })
+        }
+        Card(modifier = Modifier.fillMaxWidth(),
+            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)) {
+            Row(Modifier.fillMaxWidth().clickable { historyExpanded = !historyExpanded }.padding(12.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                Icon(Icons.Default.ShowChart, contentDescription = null)
+                Text("Datenverlauf", modifier = Modifier.weight(1f),
+                    style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                Icon(if (historyExpanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
+                    contentDescription = if (historyExpanded) "Datenverlauf einklappen" else "Datenverlauf ausklappen")
+            }
+        }
+        if (historyExpanded) {
+
+            // History
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = "${history.size} Messwerte",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold
+                )
+                IconButton(onClick = onClearHistory) {
+                    Icon(Icons.Default.Delete, contentDescription = "Verlauf leeren")
+                }
+            }
+
+            if (history.isEmpty()) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(min = 120.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
                         Text(
-                            text = if (selectedLoco.decoderManufacturer.contains("Minitrix", ignoreCase = true))
-                                "Für diesen Minitrix-Decoder liegt keine RailCom-Geschwindigkeit vor."
-                            else "Noch keine RailCom-Daten für Adresse ${selectedLoco.address}.",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.75f)
+                            text = "Warte auf Livedaten vom ESP32...",
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
-                } else {
-                    ComparisonSpeedRow("Messwagen", liveSpeedKmH, maxOf(220f, liveSpeedKmH), MaterialTheme.colorScheme.primary)
-                    Text(
-                        "Wähle eine Lok aus, um die zweite Geschwindigkeit zu vergleichen.",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.75f)
-                    )
                 }
-
-            }
-        }
-
-        // History
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Text(
-                text = "Datenverlauf (Stream)",
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.Bold
-            )
-            IconButton(onClick = onClearHistory) {
-                Icon(Icons.Default.Delete, contentDescription = "Verlauf leeren")
-            }
-        }
-
-        if (history.isEmpty()) {
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .weight(1f),
-                contentAlignment = Alignment.Center
-            ) {
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    Text(
-                        text = "Warte auf Livedaten vom ESP32...",
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-            }
-        } else {
-            val sdf = remember { SimpleDateFormat("HH:mm:ss.SSS", Locale.getDefault()) }
-            LazyColumn(
-                modifier = Modifier.weight(1f),
-                verticalArrangement = Arrangement.spacedBy(6.dp)
-            ) {
-                items(history) { packet ->
-                    Card(
-                        modifier = Modifier.fillMaxWidth(),
-                        colors = CardDefaults.cardColors(
-                            containerColor = MaterialTheme.colorScheme.surfaceVariant
-                        )
-                    ) {
-                        Column(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(12.dp),
-                            horizontalAlignment = Alignment.End,
-                            verticalArrangement = Arrangement.spacedBy(4.dp)
+            } else {
+                val sdf = remember { SimpleDateFormat("HH:mm:ss.SSS", Locale.getDefault()) }
+                LazyColumn(
+                    modifier = Modifier.heightIn(max = 320.dp),
+                    verticalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    items(history) { packet ->
+                        Card(
+                            modifier = Modifier.fillMaxWidth(),
+                            colors = CardDefaults.cardColors(
+                                containerColor = MaterialTheme.colorScheme.surfaceVariant
+                            )
                         ) {
-                            Text(
-                                text = sdf.format(Date(packet.timestampMs)),
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                            val packetDisplayText = if (parseSpeedFromText(packet.textValue) != null) {
-                                val speedValue = requireNotNull(parseSpeedFromText(packet.textValue))
-                                val speedText = "${"%.1f".format(Locale.getDefault(), speedValue)} km/h"
-                                val revolutions = parseRevolutionsFromText(packet.textValue)
-                                if (revolutions != null) {
-                                    "$speedText · ${"%.1f".format(Locale.getDefault(), revolutions/3)} Umdrehungen/s"
+                            Column(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(12.dp),
+                                horizontalAlignment = Alignment.End,
+                                verticalArrangement = Arrangement.spacedBy(4.dp)
+                            ) {
+                                Text(
+                                    text = sdf.format(Date(packet.timestampMs)),
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                                val packetDisplayText = if (parseSpeedFromText(packet.textValue) != null) {
+                                    val speedValue = requireNotNull(parseSpeedFromText(packet.textValue))
+                                    val speedText = "${"%.1f".format(Locale.getDefault(), speedValue)} km/h"
+                                    val revolutions = parseRevolutionsFromText(packet.textValue)
+                                    if (revolutions != null) {
+                                        "$speedText · ${"%.1f".format(Locale.getDefault(), revolutions/3)} Umdrehungen/s"
+                                    } else {
+                                        speedText
+                                    }
                                 } else {
-                                    speedText
+                                    packet.textValue
                                 }
-                            } else {
-                                packet.textValue
+                                Text(
+                                    text = packetDisplayText,
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    fontWeight = FontWeight.SemiBold,
+                                    fontFamily = FontFamily.Monospace,
+                                    modifier = Modifier.fillMaxWidth(),
+                                    maxLines = 1
+                                )
                             }
-                            Text(
-                                text = packetDisplayText,
-                                style = MaterialTheme.typography.bodyMedium,
-                                fontWeight = FontWeight.SemiBold,
-                                fontFamily = FontFamily.Monospace,
-                                modifier = Modifier.fillMaxWidth(),
-                                maxLines = 1
-                            )
+                        }
+                    }
+                }
+            }
+        }
+        ConnectionLogSection(connectionLog, onClearConnectionLog)
+    }
+}
+
+@Composable
+private fun ConnectionLogSection(entries: List<BleConnectionLogEntry>, onClear: () -> Unit) {
+    var expanded by rememberSaveable { mutableStateOf(false) }
+    val dateFormat = remember { SimpleDateFormat("dd.MM. HH:mm:ss.SSS", Locale.getDefault()) }
+    Card(modifier = Modifier.fillMaxWidth(),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)) {
+        Row(Modifier.fillMaxWidth().clickable { expanded = !expanded }.padding(12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            Icon(Icons.Default.BugReport, contentDescription = null)
+            Text("Logging", modifier = Modifier.weight(1f),
+                style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+            Icon(if (expanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
+                contentDescription = if (expanded) "Logging einklappen" else "Logging ausklappen")
+        }
+        if (expanded) {
+            Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically) {
+                Text("${entries.size} Ereignisse", style = MaterialTheme.typography.bodySmall)
+                IconButton(onClick = onClear, enabled = entries.isNotEmpty()) {
+                    Icon(Icons.Default.Delete, contentDescription = "Logging leeren")
+                }
+            }
+            if (entries.isEmpty()) {
+                Text("Noch keine Verbindungsereignisse.", modifier = Modifier.padding(12.dp),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant)
+            } else {
+                LazyColumn(Modifier.fillMaxWidth().heightIn(max = 240.dp),
+                    contentPadding = PaddingValues(12.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    items(entries) { entry ->
+                        Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                            Text(dateFormat.format(Date(entry.timestampMs)),
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Text(entry.message, style = MaterialTheme.typography.bodySmall,
+                                color = if (entry.isError) MaterialTheme.colorScheme.error
+                                    else MaterialTheme.colorScheme.onSurface)
                         }
                     }
                 }
             }
         }
     }
+}
 
+@Composable
+private fun MeasurementValueRow(label: String, value: String) {
+    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically) {
+        Text(label, modifier = Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Spacer(Modifier.width(8.dp))
+        Text(value, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Bold)
+    }
 }
 
 @Composable

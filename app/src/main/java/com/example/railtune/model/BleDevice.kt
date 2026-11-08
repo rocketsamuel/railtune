@@ -18,6 +18,12 @@ sealed interface ConnectionState {
     data class Error(val message: String) : ConnectionState
 }
 
+data class BleConnectionLogEntry(
+    val timestampMs: Long = System.currentTimeMillis(),
+    val message: String,
+    val isError: Boolean = false
+)
+
 data class LiveDataPacket(
     val timestampMs: Long = System.currentTimeMillis(),
     val rawBytes: ByteArray,
