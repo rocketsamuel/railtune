@@ -2577,7 +2577,7 @@ fun ConnectionStatusCard(
                         shape = MaterialTheme.shapes.medium,
                         colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
                     ) {
-                        Text("Stopp")
+                        Text("Stop")
                     }
                 }
                 else -> {
@@ -2764,25 +2764,30 @@ fun DeviceItemCard(
 }
 
 @Composable
-private fun ComparisonSpeedRow(label: String, speed: Float, maxSpeed: Float, color: Color) {
-    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+private fun ComparisonSpeedRow(label: String, speed: Float?, maxSpeed: Float, color: Color) {
+    val fraction by animateFloatAsState(
+        targetValue = ((speed ?: 0f) / maxSpeed.coerceAtLeast(1f)).coerceIn(0f, 1f),
+        label = "comparisonSpeed"
+    )
+    Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(6.dp)) {
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceBetween
         ) {
-            Text(label, style = MaterialTheme.typography.bodyMedium)
-            Text("${"%.1f".format(Locale.getDefault(), speed)} km/h", fontWeight = FontWeight.Bold)
+            Text(label, style = MaterialTheme.typography.bodySmall)
+            Text(speed?.let { "%.1f km/h".format(Locale.getDefault(), it) } ?: "—",
+                style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.Bold)
         }
         Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .height(8.dp)
+                .height(12.dp)
                 .clip(RoundedCornerShape(4.dp))
                 .background(MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.12f))
         ) {
             Box(
                 modifier = Modifier
-                    .fillMaxWidth((speed / maxSpeed).coerceIn(0f, 1f))
+                    .fillMaxWidth(fraction)
                     .fillMaxHeight()
                     .background(color)
             )
@@ -2810,6 +2815,7 @@ fun LiveDashboardView(
     onReconnect: () -> Unit
 ) {
     var locoMenuExpanded by remember { mutableStateOf(false) }
+    val speedColumnWidth = 80.dp
     val context = LocalContext.current
     val sortedLocos = remember(savedLocos) {
         savedLocos.sortedBy { it.name.trim().lowercase(Locale.ROOT) }
@@ -2900,12 +2906,14 @@ fun LiveDashboardView(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                     val illustration = selectedLoco?.let { locoIllustrationResource(it.illustrationId) }
-                    if (illustration != null) {
-                        Image(painterResource(illustration), contentDescription = null,
-                            modifier = Modifier.width(100.dp).height(44.dp), contentScale = ContentScale.Fit)
-                    } else {
-                        Icon(Icons.Default.Train, contentDescription = null,
-                            modifier = Modifier.width(32.dp).height(32.dp), tint = MaterialTheme.colorScheme.primary)
+                    Box(Modifier.width(speedColumnWidth).height(44.dp), contentAlignment = Alignment.Center) {
+                        if (illustration != null) {
+                            Image(painterResource(illustration), contentDescription = null,
+                                modifier = Modifier.fillMaxSize(), contentScale = ContentScale.Fit)
+                        } else {
+                            Icon(Icons.Default.Train, contentDescription = null,
+                                modifier = Modifier.size(32.dp), tint = MaterialTheme.colorScheme.primary)
+                        }
                     }
                     VerticalDivider(Modifier.height(32.dp), color = MaterialTheme.colorScheme.outlineVariant)
                     Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
@@ -2937,13 +2945,16 @@ fun LiveDashboardView(
             border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)) {
             Row(Modifier.fillMaxWidth().padding(12.dp).height(IntrinsicSize.Min),
                 horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                Column(Modifier.width(80.dp), horizontalAlignment = Alignment.CenterHorizontally,
+                Column(Modifier.width(speedColumnWidth), horizontalAlignment = Alignment.CenterHorizontally,
                     verticalArrangement = Arrangement.spacedBy(6.dp)) {
                     Text("Soll", style = MaterialTheme.typography.titleSmall,
                         modifier = Modifier.fillMaxWidth(), textAlign = TextAlign.Center)
-                    listOf<Int?>(null, 160, 100, 60, 30).forEach { speed ->
+                    val showVmax = maxSpeed !in listOf(60, 100, 160)
+                    val speedPresets = if (showVmax) listOf<Int?>(null, 160, 100, 60, 30)
+                        else listOf<Int?>(160, 100, 60, 30)
+                    speedPresets.forEach { speed ->
                         val target = speed ?: maxSpeed
-                        val selected = (speed == null || target != maxSpeed) && targetPercent > 0f &&
+                        val selected = (speed == null || target != maxSpeed || !showVmax) && targetPercent > 0f &&
                             kotlin.math.abs(targetPercent - target.toFloat() / maxSpeed * 100f) < 0.81f
                         Button(onClick = { setSpeed(target) },
                             enabled = selectedLoco != null && target <= maxSpeed,
@@ -2965,25 +2976,24 @@ fun LiveDashboardView(
                         contentPadding = PaddingValues(horizontal = 4.dp, vertical = 4.dp)) {
                         Icon(Icons.Default.Stop, contentDescription = null, modifier = Modifier.size(16.dp))
                         Spacer(Modifier.width(4.dp))
-                        Text("Stopp", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold)
+                        Text("Stop", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold)
                     }
                 }
                 VerticalDivider(color = MaterialTheme.colorScheme.outlineVariant)
                 Column(Modifier.weight(1f).fillMaxHeight(), horizontalAlignment = Alignment.CenterHorizontally,
                     verticalArrangement = Arrangement.spacedBy(12.dp, Alignment.CenterVertically)) {
-                    Text("Messwagen", style = MaterialTheme.typography.titleMedium,
+                    Text("Geschwindigkeit", style = MaterialTheme.typography.titleSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    Row(verticalAlignment = Alignment.Bottom,
-                        horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                        Text("%.1f".format(Locale.getDefault(), liveSpeedKmH), fontSize = 40.sp,
-                            fontWeight = FontWeight.Bold, maxLines = 1, modifier = Modifier.alignByBaseline())
-                        Text("km/h", style = MaterialTheme.typography.bodyMedium,
-                            modifier = Modifier.alignByBaseline(), color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    val comparisonMax = maxOf(maxSpeed.toFloat(), liveSpeedKmH, railComSpeedKmH ?: 0f)
+                    ComparisonSpeedRow("Messwagen", liveSpeedKmH, comparisonMax, MaterialTheme.colorScheme.primary)
+                    ComparisonSpeedRow("Lok", railComSpeedKmH, comparisonMax, MaterialTheme.colorScheme.tertiary)
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                        Text("0", style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text("%.0f km/h".format(Locale.getDefault(), comparisonMax),
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
-                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
-                    MeasurementValueRow("Lok", railComSpeedKmH?.let {
-                        "%.1f km/h".format(Locale.getDefault(), it)
-                    } ?: "—")
                     HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
                     MeasurementValueRow("Differenz", railComSpeedKmH?.let {
                         "%+.1f km/h".format(Locale.getDefault(), liveSpeedKmH - it)
