@@ -28,6 +28,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ShowChart
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -105,14 +106,14 @@ private fun parseRevolutionsFromText(text: String?): Float? {
     return text.split(',').getOrNull(1)?.trim()?.replace(',', '.')?.toFloatOrNull()
 }
 
-private data class BatteryReading(val estimatedPercent: Int)
+private data class BatteryReading(val estimatedPercent: Int, val voltageV: Float)
 
 private fun parseBatteryReading(text: String?): BatteryReading? {
     val fields = text?.split(',') ?: return null
     val millivolts = fields.getOrNull(2)?.toFloatOrNull() ?: return null
     val percent = fields.getOrNull(3)?.toIntOrNull() ?: return null
-    if (millivolts <= 0f) return null
-    return BatteryReading(percent.coerceIn(0, 100))
+    if (!millivolts.isFinite() || millivolts <= 0f) return null
+    return BatteryReading(percent.coerceIn(0, 100), millivolts / 1000f)
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -767,103 +768,112 @@ fun SpeedMeasurementScreen(
     onClearHistory: () -> Unit,
     onResetTripDistance: () -> Boolean
 ) {
-    var measurementShown by remember(lastConnectedAddress) { mutableStateOf(false) }
-    var showConnectionDialog by rememberSaveable { mutableStateOf(false) }
-    val isConnected = connectionState is ConnectionState.Connected
-    LaunchedEffect(isConnected) {
-        if (isConnected) {
-            measurementShown = true
-            showConnectionDialog = false
-        } else {
-            delay(3_000)
-            measurementShown = false
-            showConnectionDialog = false
+    val cornerShape = RoundedCornerShape(12.dp)
+    MaterialTheme(shapes = Shapes(
+        extraSmall = cornerShape,
+        small = cornerShape,
+        medium = cornerShape,
+        large = cornerShape,
+        extraLarge = cornerShape
+    )) {
+        var measurementShown by remember(lastConnectedAddress) { mutableStateOf(false) }
+        var showConnectionDialog by rememberSaveable { mutableStateOf(false) }
+        val isConnected = connectionState is ConnectionState.Connected
+        LaunchedEffect(isConnected) {
+            if (isConnected) {
+                measurementShown = true
+                showConnectionDialog = false
+            } else {
+                delay(3_000)
+                measurementShown = false
+                showConnectionDialog = false
+            }
         }
-    }
-    // Scanning/connecting transitions must not restart the three-second grace period.
-    if (isConnected || measurementShown) {
-        LiveDashboardView(
-            selectedLocoId = selectedLocoId,
-            onSelectedLocoChange = onSelectedLocoChange,
-            savedLocos = savedLocos,
-            railComReadings = railComReadings,
-            locoStates = locoStates,
-            onSetLocoSpeed = onSetLocoSpeed,
-            onGetLocoInfo = onGetLocoInfo,
-            latestPacket = liveDataPacket,
-            history = dataHistory,
-            connectionLog = connectionLog,
-            onClearConnectionLog = onClearConnectionLog,
-            onDisconnect = onDisconnect,
-            onClearHistory = onClearHistory,
-            onResetTripDistance = onResetTripDistance,
-            connectionState = connectionState,
-            onReconnect = { showConnectionDialog = true }
-        )
-    } else {
-        Column(
-            modifier = Modifier.fillMaxSize(),
-            verticalArrangement = Arrangement.spacedBy(16.dp)
-        ) {
-            ConnectionStatusCard(
+        // Scanning/connecting transitions must not restart the three-second grace period.
+        if (isConnected || measurementShown) {
+            LiveDashboardView(
+                selectedLocoId = selectedLocoId,
+                onSelectedLocoChange = onSelectedLocoChange,
+                savedLocos = savedLocos,
+                railComReadings = railComReadings,
+                locoStates = locoStates,
+                onSetLocoSpeed = onSetLocoSpeed,
+                onGetLocoInfo = onGetLocoInfo,
+                latestPacket = liveDataPacket,
+                history = dataHistory,
+                connectionLog = connectionLog,
+                onClearConnectionLog = onClearConnectionLog,
+                onDisconnect = onDisconnect,
+                onClearHistory = onClearHistory,
+                onResetTripDistance = onResetTripDistance,
                 connectionState = connectionState,
-                isScanning = isScanning,
-                lastConnectedName = lastConnectedName,
-                isAutoConnectEnabled = isAutoConnectEnabled,
-                onStartScan = onStartScan,
-                onStopScan = onStopScan,
-                onDisconnect = onDisconnect
+                onReconnect = { showConnectionDialog = true }
             )
-            if (!lastConnectedAddress.isNullOrEmpty()) {
-                AutoConnectBanner(
-                    lastConnectedName = lastConnectedName ?: "ESP32",
-                    isAutoConnectEnabled = isAutoConnectEnabled,
-                    onToggleAutoConnect = onToggleAutoConnect,
-                    onForgetDevice = onForgetDevice
-                )
-            }
-
-            Box(Modifier.weight(1f)) {
-                DeviceScanListView(
-                    devices = discoveredDevices,
+        } else {
+            Column(
+                modifier = Modifier.fillMaxSize(),
+                verticalArrangement = Arrangement.spacedBy(16.dp)
+            ) {
+                ConnectionStatusCard(
+                    connectionState = connectionState,
                     isScanning = isScanning,
-                    lastConnectedAddress = lastConnectedAddress,
-                    onConnect = onConnectDevice
+                    lastConnectedName = lastConnectedName,
+                    isAutoConnectEnabled = isAutoConnectEnabled,
+                    onStartScan = onStartScan,
+                    onStopScan = onStopScan,
+                    onDisconnect = onDisconnect
                 )
-            }
-            ConnectionLogSection(connectionLog, onClearConnectionLog)
-        }
-    }
-    if (showConnectionDialog) {
-        AlertDialog(
-            onDismissRequest = { showConnectionDialog = false },
-            title = { Text("Bluetooth verbinden") },
-            text = {
-                Column(Modifier.heightIn(max = 450.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    ConnectionStatusCard(
-                        connectionState = connectionState,
-                        isScanning = isScanning,
-                        lastConnectedName = lastConnectedName,
+                if (!lastConnectedAddress.isNullOrEmpty()) {
+                    AutoConnectBanner(
+                        lastConnectedName = lastConnectedName ?: "ESP32",
                         isAutoConnectEnabled = isAutoConnectEnabled,
-                        onStartScan = onStartScan,
-                        onStopScan = onStopScan,
-                        onDisconnect = onDisconnect
+                        onToggleAutoConnect = onToggleAutoConnect,
+                        onForgetDevice = onForgetDevice
                     )
-                    if (!lastConnectedAddress.isNullOrEmpty()) {
-                        AutoConnectBanner(
-                            lastConnectedName = lastConnectedName ?: "ESP32",
-                            isAutoConnectEnabled = isAutoConnectEnabled,
-                            onToggleAutoConnect = onToggleAutoConnect,
-                            onForgetDevice = onForgetDevice
-                        )
-                    }
-                    DeviceScanListView(discoveredDevices, isScanning, lastConnectedAddress, onConnectDevice)
                 }
-            },
-            confirmButton = {
-                TextButton(onClick = { showConnectionDialog = false }) { Text("Schließen") }
+
+                Box(Modifier.weight(1f)) {
+                    DeviceScanListView(
+                        devices = discoveredDevices,
+                        isScanning = isScanning,
+                        lastConnectedAddress = lastConnectedAddress,
+                        onConnect = onConnectDevice
+                    )
+                }
+                ConnectionLogSection(connectionLog, onClearConnectionLog)
             }
-        )
+        }
+        if (showConnectionDialog) {
+            AlertDialog(
+                onDismissRequest = { showConnectionDialog = false },
+                title = { Text("Bluetooth verbinden") },
+                text = {
+                    Column(Modifier.heightIn(max = 450.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                        ConnectionStatusCard(
+                            connectionState = connectionState,
+                            isScanning = isScanning,
+                            lastConnectedName = lastConnectedName,
+                            isAutoConnectEnabled = isAutoConnectEnabled,
+                            onStartScan = onStartScan,
+                            onStopScan = onStopScan,
+                            onDisconnect = onDisconnect
+                        )
+                        if (!lastConnectedAddress.isNullOrEmpty()) {
+                            AutoConnectBanner(
+                                lastConnectedName = lastConnectedName ?: "ESP32",
+                                isAutoConnectEnabled = isAutoConnectEnabled,
+                                onToggleAutoConnect = onToggleAutoConnect,
+                                onForgetDevice = onForgetDevice
+                            )
+                        }
+                        DeviceScanListView(discoveredDevices, isScanning, lastConnectedAddress, onConnectDevice)
+                    }
+                },
+                confirmButton = {
+                    TextButton(onClick = { showConnectionDialog = false }) { Text("Schließen") }
+                }
+            )
+        }
     }
 }
 
@@ -2555,7 +2565,7 @@ fun ConnectionStatusCard(
 
             when {
                 connectionState is ConnectionState.Connected || connectionState is ConnectionState.Connecting -> {
-                    OutlinedButton(onClick = onDisconnect) {
+                    OutlinedButton(onClick = onDisconnect, shape = MaterialTheme.shapes.medium) {
                         Icon(Icons.Default.BluetoothDisabled, contentDescription = null)
                         Spacer(modifier = Modifier.width(4.dp))
                         Text("Trennen")
@@ -2564,13 +2574,14 @@ fun ConnectionStatusCard(
                 isScanning -> {
                     Button(
                         onClick = onStopScan,
+                        shape = MaterialTheme.shapes.medium,
                         colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
                     ) {
                         Text("Stopp")
                     }
                 }
                 else -> {
-                    Button(onClick = onStartScan) {
+                    Button(onClick = onStartScan, shape = MaterialTheme.shapes.medium) {
                         Icon(Icons.Default.Search, contentDescription = null)
                         Spacer(modifier = Modifier.width(4.dp))
                         Text("Messwagen suchen")
@@ -2745,7 +2756,7 @@ fun DeviceItemCard(
                     color = if (device.rssi > -70) Color(0xFF00E676) else Color.Gray
                 )
             }
-            Button(onClick = onConnect) {
+            Button(onClick = onConnect, shape = MaterialTheme.shapes.medium) {
                 Text("Verbinden")
             }
         }
@@ -2844,10 +2855,45 @@ fun LiveDashboardView(
         modifier = Modifier.fillMaxSize().padding(top = 10.dp).verticalScroll(rememberScrollState()),
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
+        Card(modifier = Modifier.fillMaxWidth(),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
+            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)) {
+            MeasurementSectionHeader(Icons.Default.Bluetooth) {
+                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Text(when (connectionState) {
+                        is ConnectionState.Connected -> "Messwagen verbunden"
+                        is ConnectionState.Connecting -> "Verbindung wird aufgebaut…"
+                        is ConnectionState.Scanning -> "Messwagen wird gesucht…"
+                        is ConnectionState.Error -> connectionState.message
+                        else -> "Messwagen getrennt"
+                    }, style = MaterialTheme.typography.bodyMedium)
+                    Row(verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                        val batteryColor = if (batteryReading != null && batteryReading.estimatedPercent <= 20)
+                            MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant
+                        Icon(if (batteryReading?.estimatedPercent == 0) Icons.Default.Battery0Bar
+                            else Icons.Default.BatteryFull, contentDescription = null,
+                            modifier = Modifier.size(14.dp), tint = batteryColor)
+                        Text(batteryReading?.let {
+                            "Akku ${it.estimatedPercent} % · " + "%.2f V".format(Locale.getDefault(), it.voltageV)
+                        } ?: "Akku —",
+                            style = MaterialTheme.typography.bodySmall, color = batteryColor)
+                    }
+                }
+                TextButton(
+                    onClick = if (connectionState is ConnectionState.Connected) onDisconnect else onReconnect,
+                    contentPadding = PaddingValues(horizontal = 4.dp)
+                ) {
+                    Text(if (connectionState is ConnectionState.Connected) "Trennen" else "Verbinden",
+                        style = MaterialTheme.typography.labelMedium)
+                }
+            }
+        }
         Box {
             Card(
                 onClick = { locoMenuExpanded = true }, enabled = savedLocos.isNotEmpty(),
                 modifier = Modifier.fillMaxWidth(),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
                 border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
             ) {
                 Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp),
@@ -2859,14 +2905,15 @@ fun LiveDashboardView(
                             modifier = Modifier.width(100.dp).height(44.dp), contentScale = ContentScale.Fit)
                     } else {
                         Icon(Icons.Default.Train, contentDescription = null,
-                            modifier = Modifier.width(64.dp).height(40.dp), tint = MaterialTheme.colorScheme.primary)
+                            modifier = Modifier.width(32.dp).height(32.dp), tint = MaterialTheme.colorScheme.primary)
                     }
+                    VerticalDivider(Modifier.height(32.dp), color = MaterialTheme.colorScheme.outlineVariant)
                     Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
                         Text(selectedLoco?.name ?: "Lok auswählen", style = MaterialTheme.typography.titleMedium,
                             fontWeight = FontWeight.Bold, maxLines = 1,
                             overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
                         selectedLoco?.let {
-                            Text("Adresse ${it.address} · Vmax $maxSpeed", style = MaterialTheme.typography.bodySmall,
+                            Text("Adresse ${it.address} · Vmax $maxSpeed km/h", style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
                     }
@@ -2901,7 +2948,7 @@ fun LiveDashboardView(
                         Button(onClick = { setSpeed(target) },
                             enabled = selectedLoco != null && target <= maxSpeed,
                             modifier = Modifier.fillMaxWidth().height(36.dp),
-                            shape = RoundedCornerShape(10.dp),
+                            shape = MaterialTheme.shapes.medium,
                             colors = ButtonDefaults.buttonColors(
                                 containerColor = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant,
                                 contentColor = if (selected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurface),
@@ -2912,7 +2959,7 @@ fun LiveDashboardView(
                         }
                     }
                     Button(onClick = { setSpeed(0) }, enabled = selectedLoco != null,
-                        modifier = Modifier.fillMaxWidth().height(36.dp), shape = RoundedCornerShape(10.dp),
+                        modifier = Modifier.fillMaxWidth().height(36.dp), shape = MaterialTheme.shapes.medium,
                         colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.errorContainer,
                             contentColor = MaterialTheme.colorScheme.error),
                         contentPadding = PaddingValues(horizontal = 4.dp, vertical = 4.dp)) {
@@ -2926,10 +2973,13 @@ fun LiveDashboardView(
                     verticalArrangement = Arrangement.spacedBy(12.dp, Alignment.CenterVertically)) {
                     Text("Messwagen", style = MaterialTheme.typography.titleMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    Text("%.1f".format(Locale.getDefault(), liveSpeedKmH), fontSize = 48.sp,
-                        fontWeight = FontWeight.Bold, maxLines = 1)
-                    Text("km/h", style = MaterialTheme.typography.titleMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Row(verticalAlignment = Alignment.Bottom,
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Text("%.1f".format(Locale.getDefault(), liveSpeedKmH), fontSize = 40.sp,
+                            fontWeight = FontWeight.Bold, maxLines = 1, modifier = Modifier.alignByBaseline())
+                        Text("km/h", style = MaterialTheme.typography.bodyMedium,
+                            modifier = Modifier.alignByBaseline(), color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
                     HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
                     MeasurementValueRow("Lok", railComSpeedKmH?.let {
                         "%.1f km/h".format(Locale.getDefault(), it)
@@ -2939,103 +2989,40 @@ fun LiveDashboardView(
                         "%+.1f km/h".format(Locale.getDefault(), liveSpeedKmH - it)
                     } ?: "—")
                     if (selectedLoco != null && railComSpeedKmH == null) {
-                        Text("Keine RailCom-Geschwindigkeit", style = MaterialTheme.typography.bodySmall,
+                        Text("Keine RailCom-Daten", style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant, textAlign = TextAlign.Center)
                     }
                 }
             }
         }
-        Row(Modifier.fillMaxWidth().height(IntrinsicSize.Min),
-            horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            Card(modifier = Modifier.weight(1f).fillMaxHeight(),
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
-                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)) {
-                Column(Modifier.fillMaxWidth().padding(12.dp),
-                    verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text("Modellstrecke", style = MaterialTheme.typography.labelLarge,
+        Card(modifier = Modifier.fillMaxWidth(),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
+            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)) {
+            MeasurementSectionHeader(Icons.Default.Straighten) {
+                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                    Text("Distanz", style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    Row(verticalAlignment = Alignment.Bottom,
-                        horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                        Text(tripDistanceMeters?.let { "%.3f".format(Locale.getDefault(), it) } ?: "—",
-                            style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold,
-                            modifier = Modifier.weight(1f, fill = false))
-                        Text("m", style = MaterialTheme.typography.bodyMedium,
-                            modifier = Modifier.padding(bottom = 3.dp),
-                            color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    }
-                    OutlinedButton(
-                        onClick = {
-                            val requested = onResetTripDistance()
-                            Toast.makeText(context,
-                                if (requested) "Zurücksetzen angefordert"
-                                else "Zurücksetzen fehlgeschlagen. Verbindung und Messwagen-Firmware prüfen.",
-                                Toast.LENGTH_SHORT).show()
-                        },
-                        enabled = connectionState is ConnectionState.Connected && tripDistanceMeters != null,
-                        modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(10.dp),
-                        contentPadding = PaddingValues(horizontal = 6.dp, vertical = 4.dp)
-                    ) {
-                        Icon(Icons.Default.RestartAlt, contentDescription = null, modifier = Modifier.size(16.dp))
-                        Spacer(Modifier.width(4.dp))
-                        Text("Zurücksetzen", style = MaterialTheme.typography.labelMedium)
-                    }
+                    Text(tripDistanceMeters?.let { "%.3f m".format(Locale.getDefault(), it) } ?: "—",
+                        style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
                 }
+                TextButton(
+                    onClick = {
+                        val requested = onResetTripDistance()
+                        Toast.makeText(context,
+                            if (requested) "Zurücksetzen angefordert"
+                            else "Zurücksetzen fehlgeschlagen. Verbindung und Messwagen-Firmware prüfen.",
+                            Toast.LENGTH_SHORT).show()
+                    },
+                    enabled = connectionState is ConnectionState.Connected && tripDistanceMeters != null,
+                    contentPadding = PaddingValues(horizontal = 4.dp)
+                ) { Text("Zurücksetzen", style = MaterialTheme.typography.labelMedium) }
             }
-            Card(modifier = Modifier.weight(1f).fillMaxHeight(),
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
-                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)) {
-                val batteryColor = if (batteryReading != null && batteryReading.estimatedPercent <= 20)
-                    MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary
-                Column(Modifier.fillMaxSize().padding(12.dp),
-                    verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text("Akku Messwagen", style = MaterialTheme.typography.labelLarge,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    Row(verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                        Icon(if (batteryReading?.estimatedPercent == 0) Icons.Default.Battery0Bar
-                            else Icons.Default.BatteryFull, contentDescription = null,
-                            tint = batteryColor, modifier = Modifier.size(24.dp))
-                        Text(batteryReading?.let { "${it.estimatedPercent} %" } ?: "—",
-                            style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
-                    }
-                    Spacer(Modifier.weight(1f))
-                    if (batteryReading != null) {
-                        LinearProgressIndicator(
-                            progress = { batteryReading.estimatedPercent / 100f },
-                            modifier = Modifier.fillMaxWidth().height(6.dp).clip(RoundedCornerShape(3.dp)),
-                            color = batteryColor,
-                            trackColor = MaterialTheme.colorScheme.outlineVariant
-                        )
-                    } else {
-                        Text("Keine Akkudaten", style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    }
-                    Spacer(Modifier.height(8.dp))
-                }
-            }
-        }
-        OutlinedButton(
-            onClick = if (connectionState is ConnectionState.Connected) onDisconnect else onReconnect,
-            modifier = Modifier.fillMaxWidth()
-        ) {
-            Icon(if (connectionState is ConnectionState.Connected) Icons.Default.BluetoothDisabled
-                else Icons.Default.BluetoothSearching, contentDescription = null)
-            Spacer(Modifier.width(8.dp))
-            Text(when (connectionState) {
-                is ConnectionState.Connected -> "Bluetooth trennen"
-                is ConnectionState.Connecting -> "Bluetooth wird verbunden…"
-                is ConnectionState.Scanning -> "Bluetooth wird gesucht…"
-                is ConnectionState.Error -> connectionState.message
-                else -> "Bluetooth verbinden"
-            })
         }
         Card(modifier = Modifier.fillMaxWidth(),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
             border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)) {
-            Row(Modifier.fillMaxWidth().clickable { historyExpanded = !historyExpanded }.padding(12.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                Icon(Icons.Default.ShowChart, contentDescription = null)
+            MeasurementSectionHeader(Icons.AutoMirrored.Filled.ShowChart,
+                modifier = Modifier.clickable { historyExpanded = !historyExpanded }) {
                 Text("Datenverlauf", modifier = Modifier.weight(1f),
                     style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
                 Icon(if (historyExpanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
@@ -3130,15 +3117,30 @@ fun LiveDashboardView(
 }
 
 @Composable
+private fun MeasurementSectionHeader(
+    icon: ImageVector,
+    modifier: Modifier = Modifier,
+    content: @Composable RowScope.() -> Unit
+) {
+    Row(modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp).heightIn(min = 40.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+        Icon(icon, contentDescription = null, modifier = Modifier.size(24.dp),
+            tint = MaterialTheme.colorScheme.primary)
+        VerticalDivider(Modifier.height(32.dp), color = MaterialTheme.colorScheme.outlineVariant)
+        content()
+    }
+}
+
+@Composable
 private fun ConnectionLogSection(entries: List<BleConnectionLogEntry>, onClear: () -> Unit) {
     var expanded by rememberSaveable { mutableStateOf(false) }
     val dateFormat = remember { SimpleDateFormat("dd.MM. HH:mm:ss.SSS", Locale.getDefault()) }
     Card(modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
         border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)) {
-        Row(Modifier.fillMaxWidth().clickable { expanded = !expanded }.padding(12.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            Icon(Icons.Default.BugReport, contentDescription = null)
+        MeasurementSectionHeader(Icons.Default.Description,
+            modifier = Modifier.clickable { expanded = !expanded }) {
             Text("Logging", modifier = Modifier.weight(1f),
                 style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
             Icon(if (expanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
