@@ -268,8 +268,6 @@ fun MainScreen(viewModel: BleViewModel) {
                                 ),
                                 contentPadding = PaddingValues(horizontal = 10.dp, vertical = 0.dp)
                             ) {
-                                Icon(Icons.Default.StopCircle, contentDescription = null, modifier = Modifier.size(18.dp))
-                                Spacer(Modifier.width(6.dp))
                                 Text(
                                     when {
                                         isEmergencyReleasePending -> "FREIGEBEN …"
@@ -1437,7 +1435,7 @@ private fun DccFunctionAssignmentsEditor(
     onValuesChange: (DccFunctionInputs) -> Unit
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        Text("F-Taste eintragen (0–63); leere Felder blenden die Funktion aus.", style = MaterialTheme.typography.bodySmall)
+        Text("F-Taste eintragen. Leere Felder blenden die Funktion aus.", style = MaterialTheme.typography.bodySmall)
         if (soundOnly) {
             DccFunctionNumberField("Sound", Icons.Default.VolumeUp, values.sound) { onValuesChange(values.copy(sound = it)) }
             DccFunctionNumberField("Horn hoch", Icons.Default.Campaign, values.hornHigh) { onValuesChange(values.copy(hornHigh = it)) }
@@ -1632,15 +1630,24 @@ fun DrivingScreen(
                 onBack = { showAddLocoDialog = false; editingLocoId = null },
                 onSave = { updated ->
                     if (original == null) {
-                        onAddLoco(updated.name, updated.address, updated.maxSpeedKmH,
+                        val created = onAddLoco(updated.name, updated.address, updated.maxSpeedKmH,
                             updated.decoderManufacturer, updated.illustrationId, updated.note,
                             updated.dccFunctions, updated.railcomMultiplier)
+                        onUpdateLoco(created.copy(
+                            maintenanceNotes = updated.maintenanceNotes,
+                            maintenanceHistory = updated.maintenanceHistory
+                        ))
                     } else {
                         onUpdateLoco(updated)
                     }
                     showAddLocoDialog = false
                     editingLocoId = null
                 },
+                onMaintenanceChange = if (original == null) null else ({ history ->
+                    // Persist maintenance without committing unrelated vehicle form edits.
+                    val current = savedLocos.firstOrNull { it.id == original.id } ?: original
+                    onUpdateLoco(current.copy(maintenanceHistory = history))
+                }),
                 onDelete = if (original == null) null else ({
                     onRemoveLoco(original.id)
                     if (selectedLocoId == original.id) {
@@ -1901,6 +1908,7 @@ private fun LocoEditorScreen(
     initialLoco: Loco?,
     onBack: () -> Unit,
     onSave: (Loco) -> Unit,
+    onMaintenanceChange: ((List<MaintenanceEntry>) -> Unit)? = null,
     onDelete: (() -> Unit)? = null
 ) {
     val draftId = rememberSaveable(initialLoco?.id) { initialLoco?.id ?: UUID.randomUUID().toString() }
@@ -1918,6 +1926,10 @@ private fun LocoEditorScreen(
         mutableStateOf(MaintenanceHistory.encode(loco.maintenanceHistory))
     }
     val maintenanceHistory = remember(maintenanceJson) { MaintenanceHistory.decode(maintenanceJson) }
+    fun updateMaintenanceHistory(history: List<MaintenanceEntry>) {
+        onMaintenanceChange?.invoke(history)
+        maintenanceJson = MaintenanceHistory.encode(history)
+    }
     var pendingMaintenanceDeleteId by rememberSaveable(loco.id) { mutableStateOf<String?>(null) }
     var maintenanceDraftJson by rememberSaveable(loco.id) {
         mutableStateOf(MaintenanceHistory.encode(listOf(newMaintenanceEntry())))
@@ -1947,7 +1959,7 @@ private fun LocoEditorScreen(
             text = { Text("Möchtest du den Wartungseintrag vom ${entry.date} wirklich löschen?") },
             confirmButton = {
                 TextButton(onClick = {
-                    maintenanceJson = MaintenanceHistory.encode(maintenanceHistory.filterNot { it.id == entry.id })
+                    updateMaintenanceHistory(maintenanceHistory.filterNot { it.id == entry.id })
                     pendingMaintenanceDeleteId = null
                 }) { Text("Löschen", color = MaterialTheme.colorScheme.error) }
             },
@@ -1965,12 +1977,21 @@ private fun LocoEditorScreen(
             IconButton(onClick = onBack) {
                 Icon(Icons.Default.ArrowBack, contentDescription = "Zurück ohne Speichern")
             }
-            Text(
-                if (initialLoco == null) "Lok anlegen" else "Lok bearbeiten",
-                modifier = Modifier.weight(1f),
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.Bold
-            )
+            Column(Modifier.weight(1f)) {
+                Text(
+                    if (initialLoco == null) "Lok anlegen" else "Lok bearbeiten",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold
+                )
+                val locoDescription = listOf(editName, editNote).filter { it.isNotBlank() }.joinToString(" · ")
+                if (locoDescription.isNotBlank()) {
+                    Text(locoDescription,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                        overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
+                }
+            }
             FilterChip(selected = false, enabled = canSave, onClick = {
                 onSave(loco.copy(
                     name = editName,
@@ -2101,14 +2122,14 @@ private fun LocoEditorScreen(
                     Column(
                         modifier = Modifier.requiredWidth(maxWidth + 64.dp)
                             .background(Color(0xFF172B3D))
-                            .padding(16.dp),
+                            .padding(horizontal = 32.dp, vertical = 16.dp),
                         verticalArrangement = Arrangement.spacedBy(12.dp)
                     ) {
                         MaintenanceEntryEditor(maintenanceDraft) { updated ->
                             maintenanceDraftJson = MaintenanceHistory.encode(listOf(updated))
                         }
                         Button(onClick = {
-                            maintenanceJson = MaintenanceHistory.encode(listOf(maintenanceDraft) + maintenanceHistory)
+                            updateMaintenanceHistory(listOf(maintenanceDraft) + maintenanceHistory)
                             maintenanceDraftJson = MaintenanceHistory.encode(listOf(newMaintenanceEntry()))
                         }, enabled = parseMaintenanceDate(maintenanceDraft.date) != null &&
                             (maintenanceDraft.motorCleaned || maintenanceDraft.bogiesCleaned || maintenanceDraft.comment.isNotBlank()),
@@ -2130,6 +2151,11 @@ private fun LocoEditorScreen(
                 if (maintenanceHistory.isEmpty()) {
                     Text("Noch keine Wartungen eingetragen.")
                 }
+                if (initialLoco == null && maintenanceHistory.isNotEmpty()) {
+                    Text("Zum dauerhaften Sichern zuerst die neue Lok über Speichern anlegen.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
                 BoxWithConstraints(Modifier.fillMaxWidth()) {
                     Column(Modifier.requiredWidth(maxWidth + 64.dp)) {
                         maintenanceHistory.forEachIndexed { index, entry ->
@@ -2138,18 +2164,23 @@ private fun LocoEditorScreen(
                                     Modifier.fillMaxWidth()
                                         .background(if (index % 2 == 0) Color(0xFF101C2B)
                                             else Color(0xFF1B3043))
-                                        .padding(horizontal = 16.dp, vertical = 12.dp),
-                                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                                        .padding(horizontal = 32.dp, vertical = 12.dp),
+                                    verticalArrangement = Arrangement.spacedBy(4.dp)
                                 ) {
                                     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                                        Text(entry.date, style = MaterialTheme.typography.titleMedium,
+                                        Text(entry.date, style = MaterialTheme.typography.titleSmall,
                                             fontWeight = FontWeight.Bold,
                                             modifier = Modifier.weight(1f))
-                                        TextButton(onClick = { pendingMaintenanceDeleteId = entry.id }) {
-                                            Icon(Icons.Default.Delete, contentDescription = null,
-                                                tint = MaterialTheme.colorScheme.error)
-                                            Spacer(Modifier.width(8.dp))
-                                            Text("Löschen", color = MaterialTheme.colorScheme.error)
+                                        IconButton(
+                                            onClick = { pendingMaintenanceDeleteId = entry.id },
+                                            modifier = Modifier.size(32.dp)
+                                        ) {
+                                            Icon(
+                                                Icons.Default.DeleteOutline,
+                                                contentDescription = "Wartung vom ${entry.date} löschen",
+                                                tint = MaterialTheme.colorScheme.error,
+                                                modifier = Modifier.size(20.dp)
+                                            )
                                         }
                                     }
                                     if (entry.motorCleaned) MaintenanceCompletedTask("Motor gereinigt")
