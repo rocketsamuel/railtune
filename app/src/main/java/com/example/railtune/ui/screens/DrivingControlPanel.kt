@@ -5,7 +5,6 @@ import android.graphics.Typeface
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
-import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -17,16 +16,18 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.drawscope.translate
+import androidx.compose.ui.graphics.vector.rememberVectorPainter
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlin.math.abs
@@ -41,14 +42,11 @@ private val PanelOutline = Color(0xFF344D65)
 
 @Composable
 internal fun DrivingControlPanel(
-    name: String,
-    note: String,
     online: Boolean,
     actualSpeed: Float,
     targetSpeed: Float,
     maxSpeed: Float,
     forward: Boolean,
-    onEdit: () -> Unit,
     onSpeedChange: (Float) -> Unit,
     onDirectionChange: (Boolean) -> Unit
 ) {
@@ -60,61 +58,14 @@ internal fun DrivingControlPanel(
     ) {
         Column(Modifier.padding(start = 12.dp, top = 6.dp, end = 12.dp, bottom = 12.dp),
             verticalArrangement = Arrangement.Top) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy((-2).dp)) {
-                    Row(horizontalArrangement = Arrangement.spacedBy(16.dp),
-                        verticalAlignment = Alignment.CenterVertically) {
-                        Text(name, modifier = Modifier.weight(1f, fill = false), color = PanelText,
-                            style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold,
-                            maxLines = 1, overflow = TextOverflow.Ellipsis)
-                        if (online) {
-                            Row(modifier = Modifier
-                                .border(1.dp, Color(0xFF39D477), RoundedCornerShape(12.dp))
-                                .padding(horizontal = 5.dp, vertical = 2.dp),
-                                horizontalArrangement = Arrangement.spacedBy(2.dp),
-                                verticalAlignment = Alignment.CenterVertically) {
-                                Icon(Icons.Default.Speed, contentDescription = null,
-                                    modifier = Modifier.size(10.dp), tint = Color(0xFF39D477))
-                                Text("Online", color = PanelText,
-                                    style = MaterialTheme.typography.labelSmall,
-                                    fontSize = 10.sp, lineHeight = 12.sp, maxLines = 1)
-                            }
-                        }
-                    }
-                    if (note.isNotBlank()) Text(note, color = PanelText,
-                        style = MaterialTheme.typography.bodySmall)
-                }
-                IconButton(onClick = onEdit) {
-                    Icon(Icons.Default.Edit, contentDescription = "Lok bearbeiten", tint = PanelMuted)
-                }
-            }
-            Spacer(Modifier.height(6.dp))
-            HorizontalDivider(color = PanelOutline)
-            Spacer(Modifier.height(12.dp))
             BoxWithConstraints(Modifier.fillMaxWidth()) {
                 // Preserve readable controls on narrow phones; let the dial take remaining space.
-                val presetWidth = if (maxWidth < 360.dp) 76.dp else 88.dp
+                // Match the 80 dp image column and 12 dp gap in the vehicle dropdown.
+                val presetWidth = 84.dp
                 val throttleWidth = 56.dp
-                val dialWidth = (maxWidth - presetWidth - throttleWidth - 16.dp).coerceAtMost(300.dp)
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp),
+                val dialWidth = (maxWidth - presetWidth - throttleWidth - 25.dp).coerceAtMost(300.dp)
+                Row(Modifier.fillMaxWidth().height(IntrinsicSize.Min), horizontalArrangement = Arrangement.spacedBy(8.dp),
                     verticalAlignment = Alignment.CenterVertically) {
-                    DrivingSpeedometer(actualSpeed, Modifier.weight(1f).height(dialWidth))
-                    Column(Modifier.width(throttleWidth), horizontalAlignment = Alignment.CenterHorizontally) {
-                        Text(targetSpeed.toInt().toString(), color = PanelText,
-                            fontSize = 26.sp, fontWeight = FontWeight.Bold)
-                        Text("km/h", color = PanelMuted, style = MaterialTheme.typography.labelSmall)
-                        Box(Modifier.width(48.dp).height(164.dp), contentAlignment = Alignment.Center) {
-                            Slider(
-                                value = targetSpeed.coerceIn(0f, maxSpeed),
-                                onValueChange = onSpeedChange,
-                                valueRange = 0f..maxSpeed,
-                                modifier = Modifier.requiredWidth(164.dp).graphicsLayer { rotationZ = -90f }
-                                    .semantics { contentDescription = "Sollgeschwindigkeit in km/h" },
-                                colors = SliderDefaults.colors(thumbColor = PanelText,
-                                    activeTrackColor = PanelAccent, inactiveTrackColor = PanelOutline)
-                            )
-                        }
-                    }
                     Column(Modifier.width(presetWidth), horizontalAlignment = Alignment.CenterHorizontally,
                         verticalArrangement = Arrangement.spacedBy(6.dp)) {
                         listOf<Int?>(null, 160, 100, 60, 30).forEach { preset ->
@@ -135,6 +86,24 @@ internal fun DrivingControlPanel(
                             }
                         }
                     }
+                    VerticalDivider(Modifier.fillMaxHeight().padding(vertical = 8.dp), color = PanelOutline)
+                    Column(Modifier.width(throttleWidth), horizontalAlignment = Alignment.CenterHorizontally) {
+                        Text(targetSpeed.toInt().toString(), color = PanelText,
+                            fontSize = 26.sp, fontWeight = FontWeight.Bold)
+                        Text("km/h", color = PanelMuted, style = MaterialTheme.typography.labelSmall)
+                        Box(Modifier.width(48.dp).height(164.dp), contentAlignment = Alignment.Center) {
+                            Slider(
+                                value = targetSpeed.coerceIn(0f, maxSpeed),
+                                onValueChange = onSpeedChange,
+                                valueRange = 0f..maxSpeed,
+                                modifier = Modifier.requiredWidth(164.dp).graphicsLayer { rotationZ = -90f }
+                                    .semantics { contentDescription = "Sollgeschwindigkeit in km/h" },
+                                colors = SliderDefaults.colors(thumbColor = PanelText,
+                                    activeTrackColor = PanelAccent, inactiveTrackColor = PanelOutline)
+                            )
+                        }
+                    }
+                    DrivingSpeedometer(actualSpeed, online, Modifier.weight(1f).height(dialWidth))
                 }
             }
             Spacer(Modifier.height(12.dp))
@@ -175,9 +144,10 @@ private fun DirectionButton(forward: Boolean, selected: Boolean, onClick: () -> 
 }
 
 @Composable
-private fun DrivingSpeedometer(speed: Float, modifier: Modifier) {
+private fun DrivingSpeedometer(speed: Float, online: Boolean, modifier: Modifier) {
+    val onlineIcon = rememberVectorPainter(Icons.Default.Speed)
     val animatedSpeed by animateFloatAsState(speed.coerceIn(0f, 250f), label = "drivingSpeed")
-    Canvas(modifier.semantics { contentDescription = "Istgeschwindigkeit ${speed.toInt()} km/h" }) {
+    Canvas(modifier.semantics { contentDescription = "Istgeschwindigkeit ${speed.toInt()} km/h, RailCom ${if (online) "online" else "offline"}" }) {
         // Scale the whole instrument together so ticks, labels and needle remain aligned.
         val diameter = minOf(size.width, size.height)
         val scale = diameter / 220f
@@ -239,7 +209,17 @@ private fun DrivingSpeedometer(speed: Float, modifier: Modifier) {
             paint.color = color.toArgb()
             drawContext.canvas.nativeCanvas.drawText(value, center.x, center.y + y * scale, paint)
         }
-        text(animatedSpeed.toInt().toString(), 65f, 34f, PanelText)
-        text("km/h", 81f, 13f, PanelAccent)
+        if (online) {
+            val lamp = center + Offset(30f * scale, -34f * scale)
+            val iconSize = 20f * scale
+            translate(lamp.x - iconSize / 2f, lamp.y - iconSize / 2f) {
+                with(onlineIcon) {
+                    draw(Size(iconSize, iconSize), colorFilter = ColorFilter.tint(Color(0xFF39D477)))
+                }
+            }
+        }
+        val readingOffset = 10.dp.toPx() / scale
+        text(animatedSpeed.toInt().toString(), 65f + readingOffset, 34f, PanelText)
+        text("km/h", 81f + readingOffset, 13f, PanelAccent)
     }
 }

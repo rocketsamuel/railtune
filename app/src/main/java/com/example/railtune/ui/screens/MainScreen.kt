@@ -1,6 +1,8 @@
 package com.example.railtune.ui.screens
 
 import android.Manifest
+import com.example.railtune.model.MaintenanceEntry
+import com.example.railtune.model.MaintenanceHistory
 import android.content.pm.PackageManager
 import android.widget.Toast
 import android.os.Build
@@ -15,6 +17,7 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
@@ -1586,21 +1589,12 @@ fun DrivingScreen(
     val editingLoco = savedLocos.firstOrNull { it.id == editingLocoId }
 
     val activeLoco = savedLocos.find { it.id == selectedLocoId } ?: savedLocos.firstOrNull()
-    val sortedLocos = remember(savedLocos) { savedLocos.sortedBy { it.name.trim().lowercase(Locale.ROOT) } }
-    val locoSelectorListState = rememberLazyListState()
     var activeDccFunctionNumbers by remember(activeLoco?.id) { mutableStateOf(emptySet<Int>()) }
     val activeZ21State = activeLoco?.let { locoStates[it.address] }
 
     LaunchedEffect(savedLocos) {
         if (savedLocos.isNotEmpty() && savedLocos.none { it.id == selectedLocoId }) {
             selectedLocoId = savedLocos.first().id
-        }
-    }
-
-    LaunchedEffect(activeLoco?.id, sortedLocos) {
-        val selectedIndex = sortedLocos.indexOfFirst { it.id == activeLoco?.id }
-        if (selectedIndex >= 0) {
-            locoSelectorListState.animateScrollToItem(selectedIndex)
         }
     }
 
@@ -1678,7 +1672,7 @@ fun DrivingScreen(
         )
     } else LazyColumn(
         modifier = Modifier.fillMaxSize(),
-        verticalArrangement = Arrangement.spacedBy(16.dp)
+        verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
         // Lokverwaltung Header & Selector
         item {
@@ -1686,7 +1680,7 @@ fun DrivingScreen(
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(0.dp),
-                verticalArrangement = Arrangement.spacedBy(12.dp)
+                verticalArrangement = Arrangement.spacedBy(6.dp)
             ) {
                     Row(
                         modifier = Modifier.fillMaxWidth(),
@@ -1741,71 +1735,10 @@ fun DrivingScreen(
                             )
                     }
 
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        if (sortedLocos.isEmpty()) {
-                            Text("Keine Fahrzeuge angelegt", maxLines = 1)
-                        } else {
-                            Box(modifier = Modifier.weight(1f)) {
-                                LazyRow(
-                                    modifier = Modifier.fillMaxWidth(),
-                                    state = locoSelectorListState,
-                                                                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    items(sortedLocos, key = { it.id }) { loco ->
-                                        val isSelected = loco.id == activeLoco?.id
-                                        val illustrationRes = locoIllustrationResource(loco.illustrationId)
-                                        val chipShape = RoundedCornerShape(8.dp)
-                                        Surface(
-                                            onClick = {
-                                                selectedLocoId = loco.id
-                                                targetSpeedKmH = 0f
-                                            },
-                                            modifier = Modifier.widthIn(min = 96.dp),
-                                            shape = chipShape,
-                                            color = if (isSelected) Color(0xFF1B3A59) else Color(0xFF111D31),
-                                            contentColor = Color.White,
-                                            border = BorderStroke(
-                                                if (isSelected) 2.dp else 1.dp,
-                                                if (isSelected) Color(0xFF12C9FF) else Color(0xFF29446D)
-                                            ),
-                                            shadowElevation = if (isSelected) 3.dp else 0.dp
-                                        ) {
-                                            Column(
-                                                modifier = Modifier
-                                                    .fillMaxWidth()
-                                                    .padding(start = 9.dp, top = 5.dp, end = 9.dp, bottom = 5.dp),
-                                                horizontalAlignment = Alignment.CenterHorizontally,
-                                                verticalArrangement = Arrangement.spacedBy(2.dp)
-                                            ) {
-                                                Text(
-                                                    text = loco.name,
-                                                    maxLines = 1,
-                                                    fontSize = 14.sp,
-                                                    fontWeight = FontWeight.SemiBold,
-                                                    textAlign = TextAlign.Center,
-                                                        modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp)
-                                                )
-                                                if (illustrationRes != null) {
-                                                    Image(
-                                                        painter = painterResource(illustrationRes),
-                                                        contentDescription = null,
-                                                        modifier = Modifier
-                                                            .offset(y = (-4).dp)
-                                                            .width(62.dp)
-                                                            .height(26.dp),
-                                                        contentScale = ContentScale.Fit
-                                                    )
-                                                }
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                        }
+                    VehicleDropdown(savedLocos, activeLoco, drivingStyle = true,
+                        onEdit = { activeLoco?.let { editingLocoId = it.id } }) { id ->
+                        selectedLocoId = id
+                        targetSpeedKmH = 0f
                     }
             }
         }
@@ -1833,14 +1766,11 @@ fun DrivingScreen(
 
             item {
                 DrivingControlPanel(
-                    name = loco.name,
-                    note = loco.note,
                     online = hasRailComSpeed,
                     actualSpeed = displaySpeedKmH,
                     targetSpeed = displayedTargetSpeedKmH,
                     maxSpeed = maxLocoSpeed,
                     forward = isForwardDirection,
-                    onEdit = { editingLocoId = loco.id },
                     onSpeedChange = { speed ->
                         targetSpeedKmH = speed
                         controlSpeed(loco.address, speed / maxLocoSpeed * 100f, isForwardDirection)
@@ -1868,7 +1798,7 @@ fun DrivingScreen(
                     DccFunctionDefinition("Türen öffnen/schließen", SlidingDoorsIcon, loco.dccFunctions.doors, momentary = true)
                 ).filter { it.functionNumber != null }
                 Column(
-                    modifier = Modifier.fillMaxWidth(),
+                    modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
                     horizontalAlignment = Alignment.Start,
                     verticalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
@@ -1983,6 +1913,18 @@ private fun LocoEditorScreen(
     var editRailcomMultiplier by rememberSaveable(loco.id) { mutableStateOf(loco.railcomMultiplier.toString()) }
     var editIllustrationId by rememberSaveable(loco.id) { mutableStateOf(loco.illustrationId) }
     var editNote by rememberSaveable(loco.id) { mutableStateOf(loco.note) }
+    var editMaintenanceNotes by rememberSaveable(loco.id) { mutableStateOf(loco.maintenanceNotes) }
+    var maintenanceJson by rememberSaveable(loco.id) {
+        mutableStateOf(MaintenanceHistory.encode(loco.maintenanceHistory))
+    }
+    val maintenanceHistory = remember(maintenanceJson) { MaintenanceHistory.decode(maintenanceJson) }
+    var pendingMaintenanceDeleteId by rememberSaveable(loco.id) { mutableStateOf<String?>(null) }
+    var maintenanceDraftJson by rememberSaveable(loco.id) {
+        mutableStateOf(MaintenanceHistory.encode(listOf(newMaintenanceEntry())))
+    }
+    val maintenanceDraft = remember(maintenanceDraftJson) {
+        MaintenanceHistory.decode(maintenanceDraftJson).single()
+    }
     var editDccFunctionInputs by rememberSaveable(loco.id, stateSaver = androidx.compose.runtime.saveable.listSaver(
         save = { listOf(it.light, it.sound, it.hornHigh, it.hornLow, it.cabLight,
             it.zg12Fst1, it.zg12Fst2, it.highBeam, it.shunting, it.engineRoomLight, it.doors) },
@@ -1998,6 +1940,23 @@ private fun LocoEditorScreen(
         editDecoderManufacturer.isNotBlank() && editDccFunctionInputs.isValid() &&
         (!isCustom || (multiplier != null && multiplier.isFinite() && multiplier >= 0f))
 
+    maintenanceHistory.firstOrNull { it.id == pendingMaintenanceDeleteId }?.let { entry ->
+        AlertDialog(
+            onDismissRequest = { pendingMaintenanceDeleteId = null },
+            title = { Text("Wartung löschen?") },
+            text = { Text("Möchtest du den Wartungseintrag vom ${entry.date} wirklich löschen?") },
+            confirmButton = {
+                TextButton(onClick = {
+                    maintenanceJson = MaintenanceHistory.encode(maintenanceHistory.filterNot { it.id == entry.id })
+                    pendingMaintenanceDeleteId = null
+                }) { Text("Löschen", color = MaterialTheme.colorScheme.error) }
+            },
+            dismissButton = {
+                TextButton(onClick = { pendingMaintenanceDeleteId = null }) { Text("Abbrechen") }
+            }
+        )
+    }
+
     Column(Modifier.fillMaxSize().imePadding()) {
         Row(
             modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
@@ -2009,7 +1968,7 @@ private fun LocoEditorScreen(
             Text(
                 if (initialLoco == null) "Lok anlegen" else "Lok bearbeiten",
                 modifier = Modifier.weight(1f),
-                style = MaterialTheme.typography.titleLarge,
+                style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.Bold
             )
             FilterChip(selected = false, enabled = canSave, onClick = {
@@ -2021,6 +1980,8 @@ private fun LocoEditorScreen(
                     railcomMultiplier = if (isCustom) requireNotNull(multiplier) else 1f,
                     illustrationId = editIllustrationId,
                     note = editNote,
+                    maintenanceNotes = editMaintenanceNotes,
+                    maintenanceHistory = maintenanceHistory,
                     dccFunctions = editDccFunctionInputs.toDccFunctions()
                 ))
             },
@@ -2045,22 +2006,32 @@ private fun LocoEditorScreen(
                 selectedTabIndex = selectedTab,
                 modifier = Modifier.requiredWidth(maxWidth + 32.dp)
             ) {
-                Tab(selected = selectedTab == 0, onClick = { selectedTab = 0 }, text = { Text("Fahrzeug") })
-                Tab(selected = selectedTab == 1, onClick = { selectedTab = 1 }, text = { Text("Funktionen") })
-                Tab(selected = selectedTab == 2, onClick = { selectedTab = 2 }, text = { Text("Sound") })
+                listOf("Fahrzeug", "Funktionen", "Sound", "Wartung").forEachIndexed { index, label ->
+                    Tab(
+                        selected = selectedTab == index,
+                        onClick = { selectedTab = index },
+                        modifier = Modifier.heightIn(min = 48.dp)
+                    ) {
+                        Text(label, maxLines = 1, softWrap = false,
+                            style = MaterialTheme.typography.titleSmall,
+                            modifier = Modifier.padding(horizontal = 4.dp, vertical = 14.dp))
+                    }
+                }
             }
         }
         val vehicleScroll = rememberScrollState()
         val functionsScroll = rememberScrollState()
         val soundScroll = rememberScrollState()
+        val maintenanceScroll = rememberScrollState()
         Column(
             modifier = Modifier.weight(1f).fillMaxWidth()
                 .verticalScroll(when (selectedTab) {
                     0 -> vehicleScroll
                     1 -> functionsScroll
-                    else -> soundScroll
+                    2 -> soundScroll
+                    else -> maintenanceScroll
                 })
-                .padding(horizontal = 16.dp, vertical = 20.dp),
+                .padding(horizontal = 16.dp, vertical = if (selectedTab == 3) 0.dp else 20.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
             if (selectedTab == 0) {
@@ -2124,6 +2095,79 @@ private fun LocoEditorScreen(
                         Text("Fahrzeug löschen", color = MaterialTheme.colorScheme.error)
                     }
                 }
+            } else if (selectedTab == 3) {
+                BoxWithConstraints(Modifier.fillMaxWidth()) {
+                    // Include the editor's and MainScreen's horizontal insets.
+                    Column(
+                        modifier = Modifier.requiredWidth(maxWidth + 64.dp)
+                            .background(Color(0xFF172B3D))
+                            .padding(16.dp),
+                        verticalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        MaintenanceEntryEditor(maintenanceDraft) { updated ->
+                            maintenanceDraftJson = MaintenanceHistory.encode(listOf(updated))
+                        }
+                        Button(onClick = {
+                            maintenanceJson = MaintenanceHistory.encode(listOf(maintenanceDraft) + maintenanceHistory)
+                            maintenanceDraftJson = MaintenanceHistory.encode(listOf(newMaintenanceEntry()))
+                        }, enabled = parseMaintenanceDate(maintenanceDraft.date) != null &&
+                            (maintenanceDraft.motorCleaned || maintenanceDraft.bogiesCleaned || maintenanceDraft.comment.isNotBlank()),
+                            shape = MaterialTheme.shapes.small,
+                            modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) {
+                            Icon(Icons.Default.Add, contentDescription = null)
+                            Spacer(Modifier.width(8.dp))
+                            Text("Hinzufügen")
+                        }
+                    }
+                }
+                Column(Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
+                    Text("Wartungshistorie", style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold)
+                    Text(if (maintenanceHistory.size == 1) "1 Eintrag" else "${maintenanceHistory.size} Einträge",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+                if (maintenanceHistory.isEmpty()) {
+                    Text("Noch keine Wartungen eingetragen.")
+                }
+                BoxWithConstraints(Modifier.fillMaxWidth()) {
+                    Column(Modifier.requiredWidth(maxWidth + 64.dp)) {
+                        maintenanceHistory.forEachIndexed { index, entry ->
+                            key(entry.id) {
+                                Column(
+                                    Modifier.fillMaxWidth()
+                                        .background(if (index % 2 == 0) Color(0xFF101C2B)
+                                            else Color(0xFF1B3043))
+                                        .padding(horizontal = 16.dp, vertical = 12.dp),
+                                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                                ) {
+                                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                                        Text(entry.date, style = MaterialTheme.typography.titleMedium,
+                                            fontWeight = FontWeight.Bold,
+                                            modifier = Modifier.weight(1f))
+                                        TextButton(onClick = { pendingMaintenanceDeleteId = entry.id }) {
+                                            Icon(Icons.Default.Delete, contentDescription = null,
+                                                tint = MaterialTheme.colorScheme.error)
+                                            Spacer(Modifier.width(8.dp))
+                                            Text("Löschen", color = MaterialTheme.colorScheme.error)
+                                        }
+                                    }
+                                    if (entry.motorCleaned) MaintenanceCompletedTask("Motor gereinigt")
+                                    if (entry.bogiesCleaned) MaintenanceCompletedTask("Drehgestelle gereinigt")
+                                    if (entry.comment.isNotBlank()) {
+                                        Text(entry.comment, style = MaterialTheme.typography.bodyMedium,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                if (editMaintenanceNotes.isNotBlank()) {
+                    HorizontalDivider()
+                    Text("Bisherige Wartungsnotizen", style = MaterialTheme.typography.titleSmall)
+                    Text(editMaintenanceNotes)
+                }
             } else {
                 key(selectedTab) {
                     DccFunctionAssignmentsEditor(editDccFunctionInputs, soundOnly = selectedTab == 2) {
@@ -2132,6 +2176,92 @@ private fun LocoEditorScreen(
                 }
             }
         }
+    }
+}
+
+private fun newMaintenanceEntry() = MaintenanceEntry(
+    date = java.time.LocalDate.now().format(java.time.format.DateTimeFormatter.ofPattern("dd.MM.yyyy"))
+)
+
+@Composable
+private fun MaintenanceEntryEditor(entry: MaintenanceEntry, onChange: (MaintenanceEntry) -> Unit) {
+    val context = LocalContext.current
+    val fieldColors = TextFieldDefaults.colors(
+        focusedContainerColor = Color(0xFF243E53),
+        unfocusedContainerColor = Color(0xFF243E53),
+        focusedIndicatorColor = Color.Transparent,
+        unfocusedIndicatorColor = Color.Transparent,
+        errorIndicatorColor = Color.Transparent
+    )
+    Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Text("Wartungsdatum", style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant)
+            TextField(
+                value = entry.date,
+                onValueChange = { onChange(entry.copy(date = it)) },
+                placeholder = { Text("TT.MM.JJJJ") },
+                singleLine = true,
+                shape = MaterialTheme.shapes.small,
+                colors = fieldColors,
+                isError = parseMaintenanceDate(entry.date) == null,
+                trailingIcon = {
+                    IconButton(onClick = {
+                        val date = parseMaintenanceDate(entry.date) ?: java.time.LocalDate.now()
+                        android.app.DatePickerDialog(context, { _, year, month, day ->
+                            onChange(entry.copy(date = java.time.LocalDate.of(year, month + 1, day)
+                                .format(maintenanceDateFormat)))
+                        }, date.year, date.monthValue - 1, date.dayOfMonth).show()
+                    }) { Icon(Icons.Default.DateRange, contentDescription = "Wartungsdatum auswählen") }
+                },
+                modifier = Modifier.fillMaxWidth()
+            )
+            Column {
+            Row(Modifier.fillMaxWidth().heightIn(min = 48.dp).toggleable(value = entry.motorCleaned,
+                role = androidx.compose.ui.semantics.Role.Checkbox,
+                onValueChange = { onChange(entry.copy(motorCleaned = it)) }),
+                verticalAlignment = Alignment.CenterVertically) {
+                Checkbox(checked = entry.motorCleaned,
+                    onCheckedChange = null)
+                Spacer(Modifier.width(12.dp))
+                Text("Motor gereinigt")
+            }
+            Row(Modifier.fillMaxWidth().heightIn(min = 48.dp).toggleable(value = entry.bogiesCleaned,
+                role = androidx.compose.ui.semantics.Role.Checkbox,
+                onValueChange = { onChange(entry.copy(bogiesCleaned = it)) }),
+                verticalAlignment = Alignment.CenterVertically) {
+                Checkbox(checked = entry.bogiesCleaned,
+                    onCheckedChange = null)
+                Spacer(Modifier.width(12.dp))
+                Text("Drehgestelle gereinigt")
+            }
+            }
+            Text("Kommentar", style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant)
+            TextField(
+                value = entry.comment,
+                onValueChange = { onChange(entry.copy(comment = it)) },
+                placeholder = { Text("Was wurde gemacht?") },
+                shape = MaterialTheme.shapes.small,
+                colors = fieldColors,
+                minLines = 3,
+                modifier = Modifier.fillMaxWidth()
+            )
+        }
+}
+
+private val maintenanceDateFormat = java.time.format.DateTimeFormatter.ofPattern("dd.MM.uuuu")
+    .withResolverStyle(java.time.format.ResolverStyle.STRICT)
+
+private fun parseMaintenanceDate(value: String): java.time.LocalDate? =
+    runCatching { java.time.LocalDate.parse(value, maintenanceDateFormat) }.getOrNull()
+
+@Composable
+private fun MaintenanceCompletedTask(label: String) {
+    Row(verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        Icon(Icons.Default.Check, contentDescription = null, tint = MaterialTheme.colorScheme.primary,
+            modifier = Modifier.size(20.dp))
+        Text(label, style = MaterialTheme.typography.bodyMedium)
     }
 }
 
@@ -2583,12 +2713,8 @@ fun LiveDashboardView(
     connectionState: ConnectionState,
     onReconnect: () -> Unit
 ) {
-    var locoMenuExpanded by remember { mutableStateOf(false) }
     val speedColumnWidth = 80.dp
     val context = LocalContext.current
-    val sortedLocos = remember(savedLocos) {
-        savedLocos.sortedBy { it.name.trim().lowercase(Locale.ROOT) }
-    }
 
     val liveSpeedKmH = parseSpeedFromText(latestPacket?.textValue) ?: 0f
     val batteryReading = parseBatteryReading(latestPacket?.textValue)
@@ -2664,51 +2790,7 @@ fun LiveDashboardView(
                 }
             }
         }
-        Box {
-            Card(
-                onClick = { locoMenuExpanded = true }, enabled = savedLocos.isNotEmpty(),
-                modifier = Modifier.fillMaxWidth(),
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
-                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
-            ) {
-                Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                    val illustration = selectedLoco?.let { locoIllustrationResource(it.illustrationId) }
-                    Box(Modifier.width(speedColumnWidth).height(44.dp), contentAlignment = Alignment.Center) {
-                        if (illustration != null) {
-                            Image(painterResource(illustration), contentDescription = null,
-                                modifier = Modifier.fillMaxSize(), contentScale = ContentScale.Fit)
-                        } else {
-                            Icon(Icons.Default.Train, contentDescription = null,
-                                modifier = Modifier.size(32.dp), tint = MaterialTheme.colorScheme.primary)
-                        }
-                    }
-                    VerticalDivider(Modifier.height(32.dp), color = MaterialTheme.colorScheme.outlineVariant)
-                    Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                        Text(selectedLoco?.name ?: "Lok auswählen", style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.Bold, maxLines = 1,
-                            overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
-                        selectedLoco?.let {
-                            Text("Adresse ${it.address} · Vmax $maxSpeed km/h", style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        }
-                    }
-                    Icon(Icons.Default.ArrowDropDown, contentDescription = "Lok auswählen")
-                }
-            }
-            DropdownMenu(expanded = locoMenuExpanded, onDismissRequest = { locoMenuExpanded = false }) {
-                sortedLocos.forEach { loco ->
-                    DropdownMenuItem(text = {
-                        Column {
-                            Text(loco.name)
-                            if (loco.note.isNotBlank()) Text(loco.note, style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        }
-                    }, onClick = { onSelectedLocoChange(loco.id); locoMenuExpanded = false })
-                }
-            }
-        }
+        VehicleDropdown(savedLocos, selectedLoco, onSelectedLocoChange = onSelectedLocoChange)
         Card(modifier = Modifier.fillMaxWidth(),
             colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer),
             border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)) {
@@ -3114,4 +3196,94 @@ fun GattInspectorDialog(
             }
         }
     )
+}
+
+@Composable
+private fun VehicleDropdown(
+    savedLocos: List<Loco>,
+    selectedLoco: Loco?,
+    drivingStyle: Boolean = false,
+    onEdit: (() -> Unit)? = null,
+    onSelectedLocoChange: (String) -> Unit
+) {
+    var locoMenuExpanded by remember { mutableStateOf(false) }
+    val speedColumnWidth = 80.dp
+    val maxSpeed = selectedLoco?.maxSpeedKmH?.coerceAtLeast(1) ?: 1
+    val sortedLocos = remember(savedLocos) {
+        savedLocos.sortedBy { it.name.trim().lowercase(Locale.ROOT) }
+    }
+    Box {
+        Card(
+            onClick = { locoMenuExpanded = true }, enabled = savedLocos.isNotEmpty(),
+            modifier = Modifier.fillMaxWidth(),
+            shape = if (drivingStyle) RoundedCornerShape(12.dp) else CardDefaults.shape,
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
+            border = BorderStroke(1.dp, if (drivingStyle) Color(0xFF344D65)
+                else MaterialTheme.colorScheme.outlineVariant)
+        ) {
+            Row(Modifier.fillMaxWidth().padding(start = 12.dp, end = 12.dp,
+                top = if (drivingStyle) 2.dp else 8.dp,
+                bottom = if (drivingStyle) 4.dp else 8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                val illustration = selectedLoco?.let { locoIllustrationResource(it.illustrationId) }
+                Box(Modifier.width(speedColumnWidth).height(44.dp), contentAlignment = Alignment.Center) {
+                    if (illustration != null) {
+                        Image(painterResource(illustration), contentDescription = null,
+                            modifier = Modifier.fillMaxSize(), contentScale = ContentScale.Fit)
+                    } else {
+                        Icon(Icons.Default.Train, contentDescription = null,
+                            modifier = Modifier.size(32.dp), tint = MaterialTheme.colorScheme.primary)
+                    }
+                }
+                VerticalDivider(Modifier.height(32.dp), color = MaterialTheme.colorScheme.outlineVariant)
+                Column(Modifier.weight(1f),
+                    verticalArrangement = Arrangement.spacedBy(if (drivingStyle) (-1).dp else 2.dp)) {
+                    Text(selectedLoco?.name ?: "Lok auswählen", style = MaterialTheme.typography.titleMedium,
+                        color = if (drivingStyle) Color.White else LocalContentColor.current,
+                        fontWeight = FontWeight.Bold, maxLines = 1,
+                        overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
+                    selectedLoco?.let {
+                        if (drivingStyle) {
+                            if (it.note.isNotBlank()) Text(it.note,
+                                style = MaterialTheme.typography.bodySmall, color = Color.White)
+                        } else {
+                            Text("Adresse ${it.address} · Vmax $maxSpeed km/h",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                    }
+                }
+                if (onEdit != null && selectedLoco != null) {
+                    IconButton(onClick = onEdit) {
+                        Icon(Icons.Default.Settings, contentDescription = "Lok bearbeiten", tint = Color.White)
+                    }
+                }
+                Icon(Icons.Default.ArrowDropDown, contentDescription = "Lok auswählen")
+            }
+        }
+        DropdownMenu(expanded = locoMenuExpanded, onDismissRequest = { locoMenuExpanded = false }) {
+            sortedLocos.forEach { loco ->
+                DropdownMenuItem(text = {
+                    Column {
+                        Text(loco.name, color = if (drivingStyle) Color.White else LocalContentColor.current)
+                        if (loco.note.isNotBlank()) Text(loco.note, style = MaterialTheme.typography.bodySmall,
+                            color = if (drivingStyle) Color.White else MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                }, leadingIcon = {
+                    val illustration = locoIllustrationResource(loco.illustrationId)
+                    Box(Modifier.width(speedColumnWidth).height(44.dp),
+                        contentAlignment = Alignment.Center) {
+                        if (illustration != null) {
+                            Image(painterResource(illustration), contentDescription = null,
+                                modifier = Modifier.fillMaxSize(), contentScale = ContentScale.Fit)
+                        } else {
+                            Icon(Icons.Default.Train, contentDescription = null,
+                                modifier = Modifier.size(32.dp), tint = MaterialTheme.colorScheme.primary)
+                        }
+                    }
+                }, onClick = { onSelectedLocoChange(loco.id); locoMenuExpanded = false })
+            }
+        }
+    }
 }

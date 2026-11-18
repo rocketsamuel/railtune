@@ -669,7 +669,10 @@ class Z21Manager(private val context: Context) {
                     it.dccFunctions.engineRoomLight,
                     it.dccFunctions.doors
                 ).joinToString(",") { functionNumber -> functionNumber?.toString().orEmpty() } +
-                "|${it.railcomMultiplier}"
+                "|${it.railcomMultiplier}|" + java.util.Base64.getEncoder()
+                    .encodeToString(it.maintenanceNotes.toByteArray(Charsets.UTF_8)) + "|" +
+                    java.util.Base64.getEncoder().encodeToString(
+                        com.example.railtune.model.MaintenanceHistory.encode(it.maintenanceHistory).toByteArray(Charsets.UTF_8))
         }
         prefs.edit().putString(KEY_LOCO_DATA, serialized).apply()
     }
@@ -716,7 +719,18 @@ class Z21Manager(private val context: Context) {
                                 engineRoomLight = dccFunctions.getOrNull(9)?.toIntOrNull(),
                                 doors = dccFunctions.getOrNull(10)?.toIntOrNull()
                             ),
-                            railcomMultiplier = parts.getOrNull(9)?.toFloatOrNull()?.coerceAtLeast(0f) ?: 1f
+                            railcomMultiplier = parts.getOrNull(9)?.toFloatOrNull()?.coerceAtLeast(0f) ?: 1f,
+                            maintenanceNotes = parts.getOrNull(10)?.let { encoded ->
+                                runCatching {
+                                    String(java.util.Base64.getDecoder().decode(encoded), Charsets.UTF_8)
+                                }.getOrDefault("")
+                            }.orEmpty(),
+                            maintenanceHistory = parts.getOrNull(11)?.let { encoded ->
+                                runCatching {
+                                    com.example.railtune.model.MaintenanceHistory.decode(
+                                        String(java.util.Base64.getDecoder().decode(encoded), Charsets.UTF_8))
+                                }.getOrDefault(emptyList())
+                            }.orEmpty()
                         )
                     } else null
                 }

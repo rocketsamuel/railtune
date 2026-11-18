@@ -12,7 +12,9 @@ data class Loco(
     val illustrationId: String = "",
     val note: String = "",
     val dccFunctions: DccFunctions = DccFunctions(),
-    val railcomMultiplier: Float = 1f
+    val railcomMultiplier: Float = 1f,
+    val maintenanceNotes: String = "",
+    val maintenanceHistory: List<MaintenanceEntry> = emptyList()
 )
 
 data class DccFunctions(
