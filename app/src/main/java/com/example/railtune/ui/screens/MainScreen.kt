@@ -1805,13 +1805,20 @@ fun DrivingScreen(
                     DccFunctionDefinition("Maschinenraum Beleuchtung", Icons.Default.WbIncandescent, loco.dccFunctions.engineRoomLight),
                     DccFunctionDefinition("Türen öffnen/schließen", SlidingDoorsIcon, loco.dccFunctions.doors, momentary = true)
                 ).filter { it.functionNumber != null }
+                val soundLabels = setOf("Sound", "Horn hoch", "Horn tief", "Türen öffnen/schließen")
+                val functionSections = listOf(
+                    "LOK FUNKTIONEN (DCC)" to functions.filter { it.label !in soundLabels },
+                    "SOUND" to functions.filter { it.label in soundLabels }
+                )
                 Column(
                     modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
                     horizontalAlignment = Alignment.Start,
-                    verticalArrangement = Arrangement.spacedBy(6.dp)
+                    verticalArrangement = Arrangement.spacedBy(16.dp)
                 ) {
+                    functionSections.filter { it.second.isNotEmpty() }.forEach { (title, sectionFunctions) ->
+                    Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                     Text(
-                        text = "LOK FUNKTIONEN (DCC)",
+                        text = title,
                         color = Color.White,
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.Bold
@@ -1822,7 +1829,7 @@ fun DrivingScreen(
                         horizontalArrangement = Arrangement.spacedBy(8.dp),
                         verticalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
-                        functions.forEach { function ->
+                        sectionFunctions.forEach { function ->
                             val functionNumber = function.functionNumber ?: return@forEach
                             val isOn = functionNumber in activeDccFunctionNumbers
                             if (function.momentary) {
@@ -1883,6 +1890,8 @@ fun DrivingScreen(
                                 )
                             }
                         }
+                    }
+                    }
                     }
                 }
             }
@@ -2886,43 +2895,21 @@ fun LiveDashboardView(
         }
         VehicleDropdown(savedLocos, selectedLoco, onSelectedLocoChange = onSelectedLocoChange)
         Card(modifier = Modifier.fillMaxWidth(),
-            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer),
-            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)) {
+            colors = CardDefaults.cardColors(containerColor = Color.Transparent)) {
             Row(Modifier.fillMaxWidth().padding(12.dp).height(IntrinsicSize.Min),
                 horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 Column(Modifier.width(speedColumnWidth), horizontalAlignment = Alignment.CenterHorizontally,
                     verticalArrangement = Arrangement.spacedBy(6.dp)) {
                     Text("Soll", style = MaterialTheme.typography.titleSmall,
                         modifier = Modifier.fillMaxWidth(), textAlign = TextAlign.Center)
-                    val showVmax = maxSpeed !in listOf(60, 100, 160)
-                    val speedPresets = if (showVmax) listOf<Int?>(null, 160, 100, 60, 30)
-                        else listOf<Int?>(160, 100, 60, 30)
-                    speedPresets.forEach { speed ->
-                        val target = speed ?: maxSpeed
-                        val selected = (speed == null || target != maxSpeed || !showVmax) && targetPercent > 0f &&
-                            kotlin.math.abs(targetPercent - target.toFloat() / maxSpeed * 100f) < 0.81f
-                        Button(onClick = { setSpeed(target) },
-                            enabled = selectedLoco != null && target <= maxSpeed,
-                            modifier = Modifier.fillMaxWidth().height(36.dp),
-                            shape = MaterialTheme.shapes.medium,
-                            colors = ButtonDefaults.buttonColors(
-                                containerColor = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant,
-                                contentColor = if (selected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurface),
-                            contentPadding = PaddingValues(horizontal = 6.dp, vertical = 4.dp)
-                        ) {
-                            Text(speed?.let { "$it km/h" } ?: "Vmax",
-                                style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold)
-                        }
-                    }
-                    Button(onClick = { setSpeed(0) }, enabled = selectedLoco != null,
-                        modifier = Modifier.fillMaxWidth().height(36.dp), shape = MaterialTheme.shapes.medium,
-                        colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.errorContainer,
-                            contentColor = MaterialTheme.colorScheme.error),
-                        contentPadding = PaddingValues(horizontal = 4.dp, vertical = 4.dp)) {
-                        Icon(Icons.Default.Stop, contentDescription = null, modifier = Modifier.size(16.dp))
-                        Spacer(Modifier.width(4.dp))
-                        Text("Stop", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold)
-                    }
+                    VerticalSpeedSelector(
+                        presets = speedPresets(maxSpeed.toFloat()),
+                        targetSpeed = targetPercent / 100f * maxSpeed,
+                        maxSpeed = maxSpeed.toFloat(),
+                        enabled = selectedLoco != null,
+                        onSpeedChange = { setSpeed(it.toInt()) }
+                    )
+
                 }
                 VerticalDivider(color = MaterialTheme.colorScheme.outlineVariant)
                 Column(Modifier.weight(1f).fillMaxHeight(), horizontalAlignment = Alignment.CenterHorizontally,
