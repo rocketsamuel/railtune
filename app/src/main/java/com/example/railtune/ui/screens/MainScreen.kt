@@ -17,6 +17,9 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.Orientation
+import androidx.compose.foundation.gestures.draggable
+import androidx.compose.foundation.gestures.rememberDraggableState
 import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -1420,8 +1423,7 @@ private fun DccFunctionNumberField(
                     interactionSource = interactionSource,
                     label = { Text("F-Taste") },
                     placeholder = { Text("–") },
-                    // Default outlined padding is 16 dp; reduce both vertical edges by 4 dp.
-                    contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp)
+                    contentPadding = PaddingValues(horizontal = 16.dp, vertical = 9.dp)
                 )
             }
         )
@@ -1435,7 +1437,6 @@ private fun DccFunctionAssignmentsEditor(
     onValuesChange: (DccFunctionInputs) -> Unit
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        Text("F-Taste eintragen. Leere Felder blenden die Funktion aus.", style = MaterialTheme.typography.bodySmall)
         if (soundOnly) {
             DccFunctionNumberField("Sound", Icons.Default.VolumeUp, values.sound) { onValuesChange(values.copy(sound = it)) }
             DccFunctionNumberField("Horn hoch", Icons.Default.Campaign, values.hornHigh) { onValuesChange(values.copy(hornHigh = it)) }
@@ -1974,8 +1975,11 @@ private fun LocoEditorScreen(
             modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            IconButton(onClick = onBack) {
-                Icon(Icons.Default.ArrowBack, contentDescription = "Zurück ohne Speichern")
+            Box(Modifier.width(16.dp), contentAlignment = Alignment.Center) {
+                IconButton(onClick = onBack, modifier = Modifier.requiredSize(40.dp).offset(x = (-8).dp)) {
+                    Icon(Icons.Default.ArrowBack, contentDescription = "Zurück ohne Speichern",
+                        modifier = Modifier.size(20.dp))
+                }
             }
             Column(Modifier.weight(1f)) {
                 Text(
@@ -2021,21 +2025,55 @@ private fun LocoEditorScreen(
                 )
             )
         }
-        BoxWithConstraints(Modifier.fillMaxWidth()) {
-            // Extend through MainScreen's 16 dp horizontal content insets.
-            TabRow(
-                selectedTabIndex = selectedTab,
-                modifier = Modifier.requiredWidth(maxWidth + 32.dp)
+        BoxWithConstraints(
+            modifier = Modifier.fillMaxWidth().height(48.dp)
+                .clip(RoundedCornerShape(10.dp))
+                .background(Color(0xFF171F30))
+                .border(1.dp, Color(0xFF354158), RoundedCornerShape(10.dp))
+                .padding(3.dp)
+        ) {
+            val tabWidth = (maxWidth - 6.dp) / 4
+            val density = androidx.compose.ui.platform.LocalDensity.current
+            val tabStepPx = with(density) { (tabWidth + 2.dp).toPx() }
+            var isDragging by remember { mutableStateOf(false) }
+            var dragOffsetPx by remember { mutableFloatStateOf(0f) }
+            val dragOffset = with(density) { dragOffsetPx.toDp() }
+            val selectionOffset by androidx.compose.animation.core.animateDpAsState(
+                targetValue = if (isDragging) dragOffset else (tabWidth + 2.dp) * selectedTab,
+                animationSpec = if (isDragging) androidx.compose.animation.core.snap() else tween(durationMillis = 220),
+                label = "Lok-Tab-Auswahl"
+            )
+            Box(Modifier.offset(x = if (isDragging) dragOffset else selectionOffset).width(tabWidth).fillMaxHeight()
+                .clip(RoundedCornerShape(8.dp)).background(Color(0xFF4780F5)))
+            Row(
+                Modifier.fillMaxSize().draggable(
+                    orientation = Orientation.Horizontal,
+                    state = rememberDraggableState { delta ->
+                        dragOffsetPx = (dragOffsetPx + delta).coerceIn(0f, tabStepPx * 3)
+                    },
+                    onDragStarted = {
+                        dragOffsetPx = with(density) { selectionOffset.toPx() }
+                        isDragging = true
+                    },
+                    onDragStopped = {
+                        selectedTab = (dragOffsetPx / tabStepPx + 0.5f).toInt().coerceIn(0, 3)
+                        isDragging = false
+                    }
+                ),
+                horizontalArrangement = Arrangement.spacedBy(2.dp)
             ) {
                 listOf("Fahrzeug", "Funktionen", "Sound", "Wartung").forEachIndexed { index, label ->
                     Tab(
                         selected = selectedTab == index,
                         onClick = { selectedTab = index },
-                        modifier = Modifier.heightIn(min = 48.dp)
+                        selectedContentColor = Color.White,
+                        unselectedContentColor = Color(0xFF9AAAC1),
+                        modifier = Modifier.weight(1f).heightIn(min = 40.dp)
+                            .clip(RoundedCornerShape(8.dp))
                     ) {
                         Text(label, maxLines = 1, softWrap = false,
                             style = MaterialTheme.typography.titleSmall,
-                            modifier = Modifier.padding(horizontal = 4.dp, vertical = 14.dp))
+                            modifier = Modifier.padding(horizontal = 2.dp, vertical = 10.dp))
                     }
                 }
             }
@@ -2052,25 +2090,26 @@ private fun LocoEditorScreen(
                     2 -> soundScroll
                     else -> maintenanceScroll
                 })
-                .padding(horizontal = 16.dp, vertical = if (selectedTab == 3) 0.dp else 20.dp),
+                .padding(horizontal = 16.dp,
+                    vertical = if (selectedTab == 3) 0.dp else 20.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
             if (selectedTab == 0) {
-                OutlinedTextField(
+                CompactLocoTextField(
                     value = editName,
                     onValueChange = { editName = it },
                     label = { Text("Lokname") },
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth()
                 )
-                OutlinedTextField(
+                CompactLocoTextField(
                     value = editNote,
                     onValueChange = { editNote = it },
                     label = { Text("Bemerkung") },
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth()
                 )
-                OutlinedTextField(
+                CompactLocoTextField(
                     value = editAddress,
                     onValueChange = { editAddress = it },
                     label = { Text("DCC-Adresse (1–9999)") },
@@ -2079,7 +2118,7 @@ private fun LocoEditorScreen(
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth()
                 )
-                OutlinedTextField(
+                CompactLocoTextField(
                     value = editMaxSpeed,
                     onValueChange = { editMaxSpeed = it },
                     label = { Text("Max. Geschwindigkeit (km/h)") },
@@ -2093,7 +2132,7 @@ private fun LocoEditorScreen(
                     onManufacturerSelected = { editDecoderManufacturer = it }
                 )
                 if (isCustom) {
-                    OutlinedTextField(
+                    CompactLocoTextField(
                         value = editRailcomMultiplier,
                         onValueChange = { editRailcomMultiplier = it },
                         label = { Text("Railcom Multiplikator") },
@@ -2117,12 +2156,9 @@ private fun LocoEditorScreen(
                     }
                 }
             } else if (selectedTab == 3) {
-                BoxWithConstraints(Modifier.fillMaxWidth()) {
-                    // Include the editor's and MainScreen's horizontal insets.
+                Column(Modifier.fillMaxWidth()) {
                     Column(
-                        modifier = Modifier.requiredWidth(maxWidth + 64.dp)
-                            .background(Color(0xFF172B3D))
-                            .padding(horizontal = 32.dp, vertical = 16.dp),
+                        modifier = Modifier.fillMaxWidth().padding(vertical = 16.dp),
                         verticalArrangement = Arrangement.spacedBy(12.dp)
                     ) {
                         MaintenanceEntryEditor(maintenanceDraft) { updated ->
@@ -2148,9 +2184,6 @@ private fun LocoEditorScreen(
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
-                if (maintenanceHistory.isEmpty()) {
-                    Text("Noch keine Wartungen eingetragen.")
-                }
                 if (initialLoco == null && maintenanceHistory.isNotEmpty()) {
                     Text("Zum dauerhaften Sichern zuerst die neue Lok über Speichern anlegen.",
                         style = MaterialTheme.typography.bodySmall,
@@ -2165,7 +2198,7 @@ private fun LocoEditorScreen(
                                         .background(if (index % 2 == 0) Color(0xFF101C2B)
                                             else Color(0xFF1B3043))
                                         .padding(horizontal = 32.dp, vertical = 12.dp),
-                                    verticalArrangement = Arrangement.spacedBy(4.dp)
+                                    verticalArrangement = Arrangement.spacedBy(3.dp)
                                 ) {
                                     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                                         Text(entry.date, style = MaterialTheme.typography.titleSmall,
@@ -2210,6 +2243,49 @@ private fun LocoEditorScreen(
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun CompactLocoTextField(
+    value: String,
+    onValueChange: (String) -> Unit,
+    modifier: Modifier = Modifier,
+    label: @Composable (() -> Unit)? = null,
+    placeholder: @Composable (() -> Unit)? = null,
+    trailingIcon: @Composable (() -> Unit)? = null,
+    singleLine: Boolean = false,
+    minLines: Int = 1,
+    isError: Boolean = false,
+    keyboardOptions: KeyboardOptions = KeyboardOptions.Default
+) {
+    val interactionSource = remember { MutableInteractionSource() }
+    BasicTextField(
+        value = value,
+        onValueChange = onValueChange,
+        modifier = modifier.padding(top = if (label != null) 8.dp else 0.dp),
+        singleLine = singleLine,
+        minLines = minLines,
+        keyboardOptions = keyboardOptions,
+        textStyle = MaterialTheme.typography.bodyLarge.copy(color = MaterialTheme.colorScheme.onSurface),
+        cursorBrush = SolidColor(if (isError) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary),
+        interactionSource = interactionSource,
+        decorationBox = { innerTextField ->
+            OutlinedTextFieldDefaults.DecorationBox(
+                value = value,
+                innerTextField = innerTextField,
+                enabled = true,
+                singleLine = singleLine,
+                visualTransformation = androidx.compose.ui.text.input.VisualTransformation.None,
+                interactionSource = interactionSource,
+                label = label,
+                placeholder = placeholder,
+                trailingIcon = trailingIcon,
+                isError = isError,
+                contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp)
+            )
+        }
+    )
+}
+
 private fun newMaintenanceEntry() = MaintenanceEntry(
     date = java.time.LocalDate.now().format(java.time.format.DateTimeFormatter.ofPattern("dd.MM.yyyy"))
 )
@@ -2217,23 +2293,13 @@ private fun newMaintenanceEntry() = MaintenanceEntry(
 @Composable
 private fun MaintenanceEntryEditor(entry: MaintenanceEntry, onChange: (MaintenanceEntry) -> Unit) {
     val context = LocalContext.current
-    val fieldColors = TextFieldDefaults.colors(
-        focusedContainerColor = Color(0xFF243E53),
-        unfocusedContainerColor = Color(0xFF243E53),
-        focusedIndicatorColor = Color.Transparent,
-        unfocusedIndicatorColor = Color.Transparent,
-        errorIndicatorColor = Color.Transparent
-    )
     Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            Text("Wartungsdatum", style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant)
-            TextField(
+            CompactLocoTextField(
                 value = entry.date,
                 onValueChange = { onChange(entry.copy(date = it)) },
+                label = { Text("Wartungsdatum") },
                 placeholder = { Text("TT.MM.JJJJ") },
                 singleLine = true,
-                shape = MaterialTheme.shapes.small,
-                colors = fieldColors,
                 isError = parseMaintenanceDate(entry.date) == null,
                 trailingIcon = {
                     IconButton(onClick = {
@@ -2266,14 +2332,11 @@ private fun MaintenanceEntryEditor(entry: MaintenanceEntry, onChange: (Maintenan
                 Text("Drehgestelle gereinigt")
             }
             }
-            Text("Kommentar", style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant)
-            TextField(
+            CompactLocoTextField(
                 value = entry.comment,
                 onValueChange = { onChange(entry.copy(comment = it)) },
+                label = { Text("Kommentar") },
                 placeholder = { Text("Was wurde gemacht?") },
-                shape = MaterialTheme.shapes.small,
-                colors = fieldColors,
                 minLines = 3,
                 modifier = Modifier.fillMaxWidth()
             )
