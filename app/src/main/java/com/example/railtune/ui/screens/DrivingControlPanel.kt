@@ -14,6 +14,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
@@ -67,8 +68,9 @@ internal fun DrivingControlPanel(
                 val throttleWidth = 56.dp
                 val presets = speedPresets(maxSpeed)
                 val regulatorHeight = speedSelectorHeight(presets.size)
+                var readingHeightPx by remember { mutableIntStateOf(0) }
                 val readingHeight = with(androidx.compose.ui.platform.LocalDensity.current) {
-                    (32.sp.toDp() + MaterialTheme.typography.labelSmall.lineHeight.toDp())
+                    if (readingHeightPx > 0) readingHeightPx.toDp() else 48.dp
                 }
                 val trackHeight = (regulatorHeight - readingHeight).coerceAtLeast(48.dp)
                 val dialWidth = (maxWidth - presetWidth - throttleWidth - 25.dp).coerceAtMost(300.dp)
@@ -87,7 +89,8 @@ internal fun DrivingControlPanel(
                                     onSpeedChange = onSpeedChange
                                 )
                             }
-                            Column(Modifier.width(throttleWidth), horizontalAlignment = Alignment.CenterHorizontally) {
+                            Column(Modifier.width(throttleWidth).height(regulatorHeight),
+                                horizontalAlignment = Alignment.CenterHorizontally) {
                                 Box(Modifier.width(48.dp).height(trackHeight), contentAlignment = Alignment.Center) {
                                     val throttleColors = SliderDefaults.colors(
                                         thumbColor = Color(0xFF4780F5),
@@ -114,14 +117,30 @@ internal fun DrivingControlPanel(
                                             }
                                         },
                                         track = { state ->
-                                            SliderDefaults.Track(sliderState = state, colors = throttleColors,
-                                                modifier = Modifier.height(18.dp))
+                                            Canvas(Modifier.fillMaxWidth().height(18.dp)) {
+                                                val radius = androidx.compose.ui.geometry.CornerRadius(size.height / 2)
+                                                // Always draw the full rail, including at zero speed.
+                                                drawRoundRect(Color(0xFF243247), cornerRadius = radius)
+                                                val fraction = (state.value / maxSpeed).coerceIn(0f, 1f)
+                                                if (fraction > 0f) {
+                                                    drawRoundRect(PanelAccent,
+                                                        size = Size(size.width * fraction, size.height),
+                                                        cornerRadius = radius)
+                                                }
+                                            }
                                         }
                                     )
                                 }
-                                Text(targetSpeed.toInt().toString(), color = PanelText,
-                                    fontSize = 26.sp, lineHeight = 32.sp, fontWeight = FontWeight.Bold)
-                                Text("km/h", color = PanelMuted, style = MaterialTheme.typography.labelSmall)
+                                Column(
+                                    Modifier.wrapContentHeight(unbounded = true)
+                                        .onSizeChanged { readingHeightPx = it.height },
+                                    horizontalAlignment = Alignment.CenterHorizontally
+                                ) {
+                                    Text(targetSpeed.toInt().toString(), color = PanelText,
+                                        fontSize = 24.sp, lineHeight = 24.sp, fontWeight = FontWeight.Bold)
+                                    Text("km/h", color = PanelMuted,
+                                        style = MaterialTheme.typography.labelSmall)
+                                }
                             }
                         }
                     }
@@ -213,7 +232,7 @@ private fun DrivingSpeedometer(speed: Float, online: Boolean, modifier: Modifier
         }
         val readingOffset = 10.dp.toPx() / scale
         text("IST", 36f + readingOffset, 10f, PanelMuted)
-        text(animatedSpeed.toInt().toString(), 65f + readingOffset, 34f, PanelText)
+        text(animatedSpeed.toInt().toString(), 65f + readingOffset, 28f, PanelText)
         text("km/h", 81f + readingOffset, 13f, PanelAccent)
     }
 }

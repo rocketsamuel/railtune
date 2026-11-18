@@ -1,6 +1,8 @@
 package com.example.railtune.ui.screens
 
 import android.Manifest
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.contentDescription
 import com.example.railtune.model.MaintenanceEntry
 import com.example.railtune.model.MaintenanceHistory
 import android.content.pm.PackageManager
@@ -1170,6 +1172,8 @@ private fun LocoIllustrationDropdown(
         LocoIllustrationChoice("br103", "BR 103", R.drawable.br103),
         LocoIllustrationChoice("e10_ob", "E 10 – o/b", R.drawable.e10_ob),
         LocoIllustrationChoice("br110", "BR 110", R.drawable.br110),
+        LocoIllustrationChoice("br110_ob", "BR 110 – o/b", R.drawable.br110_ob),
+        LocoIllustrationChoice("br110_stahlblau", "BR 110 – Stahlblau", R.drawable.br110_stahlblau),
         LocoIllustrationChoice("br111", "BR 111", R.drawable.br111),
         LocoIllustrationChoice("br111_ob", "BR 111 – o/b", R.drawable.br111_ob),
         LocoIllustrationChoice("br112", "BR 112", R.drawable.br112),
@@ -1460,6 +1464,8 @@ private fun locoIllustrationResource(id: String): Int? = when (id) {
     "br103" -> R.drawable.br103
     "e10_ob" -> R.drawable.e10_ob
     "br110" -> R.drawable.br110
+    "br110_ob" -> R.drawable.br110_ob
+    "br110_stahlblau" -> R.drawable.br110_stahlblau
     "br111" -> R.drawable.br111
     "br111_ob" -> R.drawable.br111_ob
     "br112" -> R.drawable.br112
@@ -1545,6 +1551,9 @@ fun DrivingScreen(
 ) {
     val context = LocalContext.current
     var showWifiExportDialog by remember { mutableStateOf(false) }
+    val vehicleTitleStyle = MaterialTheme.typography.titleSmall.let { style ->
+        style.copy(fontSize = (style.fontSize.value + 2).sp)
+    }
     val drivingPreferences = remember(context) {
         context.getSharedPreferences("railtune_preferences", 0)
     }
@@ -1698,7 +1707,7 @@ fun DrivingScreen(
                         Text(
                             text = "FAHRZEUGE (${savedLocos.size})",
                             modifier = Modifier.weight(1f),
-                            style = MaterialTheme.typography.titleSmall,
+                            style = vehicleTitleStyle,
                             fontWeight = FontWeight.Bold,
                             color = Color.White,
                             maxLines = 1,
@@ -1807,7 +1816,7 @@ fun DrivingScreen(
                 ).filter { it.functionNumber != null }
                 val soundLabels = setOf("Sound", "Horn hoch", "Horn tief", "Türen öffnen/schließen")
                 val functionSections = listOf(
-                    "LOK FUNKTIONEN (DCC)" to functions.filter { it.label !in soundLabels },
+                    "FUNKTIONEN (DCC)" to functions.filter { it.label !in soundLabels },
                     "SOUND" to functions.filter { it.label in soundLabels }
                 )
                 Column(
@@ -1820,7 +1829,7 @@ fun DrivingScreen(
                     Text(
                         text = title,
                         color = Color.White,
-                        style = MaterialTheme.typography.titleMedium,
+                        style = MaterialTheme.typography.titleSmall,
                         fontWeight = FontWeight.Bold
                     )
 
@@ -1981,13 +1990,24 @@ private fun LocoEditorScreen(
 
     Column(Modifier.fillMaxSize().imePadding()) {
         Row(
-            modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Box(Modifier.width(16.dp), contentAlignment = Alignment.Center) {
-                IconButton(onClick = onBack, modifier = Modifier.requiredSize(40.dp).offset(x = (-8).dp)) {
-                    Icon(Icons.Default.ArrowBack, contentDescription = "Zurück ohne Speichern",
-                        modifier = Modifier.size(20.dp))
+            IconButton(onClick = onBack, modifier = Modifier.offset(x = (-10).dp)) {
+                val arrowColor = LocalContentColor.current
+                Canvas(Modifier.size(20.dp).then(Modifier.semantics {
+                    contentDescription = "Zurück ohne Speichern"
+                })) {
+                    val arrow = androidx.compose.ui.graphics.Path().apply {
+                        moveTo(size.width * 0.45f, size.height * 0.1f)
+                        lineTo(size.width * 0.05f, size.height * 0.5f)
+                        lineTo(size.width * 0.45f, size.height * 0.9f)
+                        moveTo(size.width * 0.05f, size.height * 0.5f)
+                        lineTo(size.width * 0.95f, size.height * 0.5f)
+                    }
+                    drawPath(arrow, arrowColor,
+                        style = androidx.compose.ui.graphics.drawscope.Stroke(
+                            width = 2.dp.toPx(), cap = StrokeCap.Round))
                 }
             }
             Column(Modifier.weight(1f)) {
