@@ -1173,6 +1173,7 @@ private fun LocoIllustrationDropdown(
         LocoIllustrationChoice("e10_ob", "E 10 – o/b", R.drawable.e10_ob),
         LocoIllustrationChoice("br110", "BR 110", R.drawable.br110),
         LocoIllustrationChoice("br110_ob", "BR 110 – o/b", R.drawable.br110_ob),
+        LocoIllustrationChoice("br110_rb", "BR 110 – rot/beige", R.drawable.br110_rb),
         LocoIllustrationChoice("br110_stahlblau", "BR 110 – Stahlblau", R.drawable.br110_stahlblau),
         LocoIllustrationChoice("br111", "BR 111", R.drawable.br111),
         LocoIllustrationChoice("br111_ob", "BR 111 – o/b", R.drawable.br111_ob),
@@ -1465,6 +1466,7 @@ private fun locoIllustrationResource(id: String): Int? = when (id) {
     "e10_ob" -> R.drawable.e10_ob
     "br110" -> R.drawable.br110
     "br110_ob" -> R.drawable.br110_ob
+    "br110_rb" -> R.drawable.br110_rb
     "br110_stahlblau" -> R.drawable.br110_stahlblau
     "br111" -> R.drawable.br111
     "br111_ob" -> R.drawable.br111_ob
@@ -2218,15 +2220,20 @@ private fun LocoEditorScreen(
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
-                BoxWithConstraints(Modifier.fillMaxWidth()) {
-                    Column(Modifier.requiredWidth(maxWidth + 64.dp)) {
-                        maintenanceHistory.forEachIndexed { index, entry ->
+                Box(Modifier.fillMaxWidth()) {
+                    Column(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        maintenanceHistory.forEach { entry ->
                             key(entry.id) {
+                                val entryShape = OutlinedTextFieldDefaults.shape
                                 Column(
                                     Modifier.fillMaxWidth()
-                                        .background(if (index % 2 == 0) Color(0xFF101C2B)
-                                            else Color(0xFF1B3043))
-                                        .padding(horizontal = 32.dp, vertical = 12.dp),
+                                        .clip(entryShape)
+                                        .background(MaterialTheme.colorScheme.surfaceVariant)
+                                        .border(1.dp, Color(0xFF52647F), entryShape)
+                                        .padding(start = 12.dp, top = 6.dp, end = 12.dp, bottom = 12.dp),
                                     verticalArrangement = Arrangement.spacedBy(3.dp)
                                 ) {
                                     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
